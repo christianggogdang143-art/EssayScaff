@@ -20,24 +20,42 @@ Application scaffold stages (navigation + methodology):
 - **Stage 4 — Reflection and Revision** (short nav: **Reflection**)
 
 **Important distinction:** Introduction, Body, and Conclusion describe
-**essay structure**, not application navigation. The API `stage` tag
-(`config.py:8`, values `introduction`/`body`/`conclusion`) labels which
-part of the student's essay a text comes from; the Stage 4 conclusion
-draft is stored student data, never analyzed. Do not confuse the two.
+**essay structure**, not application navigation. They are worked as
+essay sections in the Writing Lab (§8, with section-specific LAB_*
+rules); the Stage 4 conclusion draft is stored student data used only
+as a planning artifact, never analyzed as an essay section. The API
+`stage` tag (`config.py:8`, values `introduction`/`body`/`conclusion`)
+labels which part of the student's essay a Writing Lab text comes from.
+Do not confuse the two.
 
 ## 1. Frontend — `templates/`, `static/js/`, `static/css/`
 
 - Student workspace (`templates/index.html`): stage tab sections
-  (Idea / Thesis / Outline / Reflection / Writing Lab), editors, Analyze
+  (Idea / Thesis / Outline / Reflection / Writing Lab / Review), editors, Analyze
   buttons, Continue buttons (disabled until the backend readiness flag
   allows), sidebar (Feedback / Concepts / Progress / Reflection /
   Revisions in Student Mode; Pipeline / Tokens / NLP / Rules / Source /
   Timing in Transparency Mode).
-- Writing Lab (`static/js/live_feedback.js`): debounced analysis
-  (`DEBOUNCE_MS = 2000`, `config.py:15`, server value via `/api/config`),
-  `POST /api/analyze`, renders feedback cards + technical panes.
+- Writing Lab client (`static/js/live_feedback.js`): per-section draft
+  buffers (introduction/body/conclusion; switching stashes/restores, memory
+  first, then the server's latest saved revision, else empty), debounced
+  analysis (`DEBOUNCE_MS = 2000`, `config.py:15`, server value via
+  `/api/config`), `POST /api/lab/analyze`, section progression gates
+  (`labToBody`/`labToConc`/`labToReview`, display only — readiness is
+  server-computed), Final Review assembly + Writing Process Summary
+  (`GET /api/lab/session/<id>`, `.../summary`; includes the Overall Status
+  block with the exact backend decision + student message). Restored
+  server drafts are programmatic fills: they cancel any pending debounce
+  timer, so restored text is **never** auto-analyzed — analysis runs only
+  from real typing pauses or explicit Analyze clicks.
 - Stage clients (`static/js/stage1-4.js`): click-driven analyses,
-  revision histories, Continue navigation, optional upstream session links.
+  revision histories, Continue navigation, optional upstream session links;
+  Stage 4 offers `labBtn` ("Start Writing My Essay") only at
+  `READY_FOR_INDEPENDENT_REVIEW`/`COMPLETE`, carrying topic/keywords/chain
+  into the lab (values only — never essay drafts).
+- Copy Full Analysis (`static/js/walkthrough.js`, `#copyAnalysisBtn`):
+  Markdown export of the active analysis (Transparency Mode only),
+  assembled from stored response data, never generated prose.
 - Transparency renderer (`static/js/transparency.js`): pipeline gears,
   token drill-down, keyword/WordNet/topic/LT tabs, rule backtraces,
   read-only source viewer.
@@ -46,6 +64,21 @@ draft is stored student data, never analyzed. Do not confuse the two.
   rendering **only** values from the live analysis response.
 - Shell (`static/js/shell.js`): tab switching, pills, counters, refresh
   restore (active tab + Stage-4 link fields only, never drafts).
+  Workspace sections: `stage1Section`, `stage2Section`, `stage3Section`,
+  `stage4Section`, `studentSection` (Writing Lab), `reviewSection`
+  (Final Review + Process Summary).
+- Progressive student feedback (`static/js/feedback_focus.js`): one
+  primary card for the current task, per-section starter guidance while a
+  lab editor is empty, lab section checklists (`LAB_CHECKLISTS`, same
+  marker policy as stages, capped at 5 rows), goal/next/checklist/
+  snapshot dashboard — all presentation-only, all traceable to live data.
+- Highlight layer (`static/js/highlight.js`): marks render **only the
+  primary item's** integer `[start,end)` spans from the live response.
+  Backend offsets count Python code points; the frontend converts through
+  a code-point map so astral-plane characters (emoji) can never drift
+  later marks. Two-way navigation (click mark → card, click card → mark),
+  typing or stage-change clears stale marks immediately, render refused on
+  text mismatch. Nothing is ever invented.
 - No generative AI, no embeddings, no browser-executed NLP.
 
 ## 2. Flask routes — `app.py`, `routes/`
@@ -55,19 +88,26 @@ draft is stored student data, never analyzed. Do not confuse the two.
   `/research/validation`; LanguageTool prewarms on a daemon thread.
 - `routes/analysis_routes.py`: `POST /api/analyze` (+ history GET),
   `POST /api/stage1-3/analyze`, `POST /api/stage4/reflect`, session
-  history GETs, `GET /api/source` (exact-match whitelist, traversal
+  history GETs, `POST /api/lab/analyze` (section + chain + optional
+  `lab_session_id`), `GET /api/lab/session/<id>` (assembled essay map +
+  per-section status), `GET /api/lab/session/<id>/summary` (process
+  summary payload), `GET /api/source` (exact-match whitelist, traversal
   denied), `/api/health`, `/api/config`. Server-side stage gates return
   **403** for ineligible linked sessions; unlinked calls are the explicit
   direct/research path (`LINK_POLICY`, `services/stage2.py:27-32`).
 - `routes/validation_routes.py`: dataset/sample/annotation/freeze/run/
   error-analysis/export endpoints. Researcher area only — never a fifth
-  student stage.
+  student stage. Optional researcher token for non-localhost deployments
+  (`X-Research-Token` → 401 when configured and absent); student/analysis
+  routes are never gated by it.
 
 ## 3. Analysis orchestration — `services/analysis_service.py :: analyze`
 
 Fixed order per call: clock/events → `nlp_service.analyze_text` (single
 spaCy parse, reused downstream) → `rule_engine.run_all_rules` →
-`grammar_service.check_grammar` → `keywords.extract_candidates` (always)
+`grammar_service.check_grammar` (LanguageTool singleton behind a
+threading init lock; daemon prewarm from `app.py` never blocks boot;
+advisory only, never blocks) → `keywords.extract_candidates` (always)
 → if topic/keywords: query terms + `wordnet_service.analyze_terms` +
 `similarity.analyze_topic` (build_corpus → vectorize → cosine →
 classify), else recorded skip → `feedback_service.build_feedback` →
@@ -165,17 +205,91 @@ functions do. All detectors are heuristic and honestly labeled
   / MODERATE otherwise; prompt budgets 3/2/1/1; reversible on new
   evidence; readiness up to COMPLETE.
 
-## 8. Persistence — `services/db.py` → SQLite
+## 8. Writing Lab — `services/lab.py`, `services/lab_rules.py`, `config.py` LAB_*
 
-`analysis_runs` + `stage1-4_revisions` (+ 8 `validation_*` tables).
+Canonical essay sessions. `POST /api/lab/analyze` runs the student's
+section text through the **unchanged** `analysis_service.analyze`, then
+evaluates section rules and stores the exact student text as an
+append-only revision. Chain links are immutable after session creation:
+presenting different non-null parent ids mints a NEW session (stale
+chains are never silently re-linked); provided-but-unknown parent ids
+raise (no dangling links). Stage histories are only read
+(latest thesis keywords, latest outline points) — Stage 1–4 machinery
+is called, never modified, and lab code paths are excluded from the
+VR-2 freeze check.
+
+- **Introduction rules** (`LAB_INTRO_001–004`): minimum 20 alpha tokens
+  (`LAB_INTRO_MIN_TOKENS`), topic connection not WEAK (lexical cosine
+  band), central-claim candidate present, no blocking meta/fragment/
+  run-on. Readiness I1–I4 → `READY FOR BODY`.
+- **Body rules** (`LAB_BODY_001–004`): minimum 30 alpha tokens,
+  main-claim candidate present, thesis overlap and best-outline-point
+  overlap bands (`LAB_BODY_ALIGN_LOW = 0.25`,
+  `LAB_BODY_ALIGN_HIGH = 0.50`; WEAKLY ALIGNED blocks). Readiness B1–B3
+  → `READY FOR CONCLUSION`.
+- **Conclusion rules** (`LAB_CONC_001–004`): minimum 15 alpha tokens,
+  lexical return to the thesis/topic (blocking unless nothing is linked),
+  plus two advisory-only guards: all-concepts-novel
+  (`LAB_CONC_003`, fires only when every conclusion concept is new and
+  there are at least `LAB_CONC_NOVEL_MIN_CONCEPTS = 3`) and
+  fragment/run-on (`LAB_CONC_004`). Readiness C1–C2
+  → `READY FOR FINAL REVIEW`.
+- Every rule declares `blocking` explicitly; LanguageTool mechanics
+  notes never block. All LAB_* rules are **EXPERIMENTAL and outside
+  VR-2**; thresholds are development values (`config.py:294-304`,
+  `DATA_MODE_DEFAULT = "development"`, overridable via
+  `ESSAYSCAFF_DATA_MODE`), pending formal empirical validation.
+- Final Review (`GET .../summary`): `student_essay` assembles ONLY the
+  latest stored revision per section — no idea/thesis/outline/
+  reflection text is inserted, no transitions generated. The student is
+  the sole author of every essay word.
+
+### Lab status vocabulary (exact backend semantics)
+
+- **BLOCKING**: the visible card's source rule is in the readiness
+  `blocking_rules` set. The student must resolve it to continue. Badge
+  shows the word "Blocking" only — never a rule id.
+- **ADVISORY**: the gate is open (`stageN_allowed` / section READY), so
+  the card is optional polish. Shown only when true — otherwise no
+  badge rather than a misleading one.
+- **READY TO CONTINUE** (lab gate line): the current section's decision
+  is its READY value; the next-section button is enabled.
+- **REVISION NEEDED**: a section decision is not its READY value, or
+  the essay has missing/not-ready sections.
+- **READY FOR INDEPENDENT REVIEW** (`services/lab.py:32,161-178`):
+  all three sections exist and each meets its blocking conditions
+  (`READY FOR BODY` + `READY FOR CONCLUSION` + `READY FOR FINAL
+  REVIEW`, no active blocking lab condition). It means ONLY that —
+  never "excellent", "accurate", "persuasive", "high-quality", or
+  "teacher-approved". Student message: "Your essay has no unresolved
+  blocking scaffold issues. Review the full essay using your own
+  judgment before submitting."
+- **Writing Process Summary**: Overall Status (exact backend decision +
+  student message), assignment topic/keywords, planning journey
+  (final idea/thesis/outline/reflection, read-only), per-stage and
+  per-section process status, snapshot (active time, revision counts,
+  timestamps), feedback counts, revision timeline. No percentages, no
+  quality/coherence/clarity scores, no accuracy claims.
+
+## 9. Persistence — `services/db.py` → SQLite
+
+`analysis_runs` + `stage1-4_revisions` (+ 8 `validation_*` tables) +
+`writing_lab_sessions` + `essay_revisions` (one row per analyzed lab
+draft: `UNIQUE(lab_session_id, section, revision_number)`, append-only;
+re-analyzing unchanged text reuses the revision — a restore never mints
+a fake new revision).
 Append-only INSERTs with `UNIQUE(session_id, revision_number)` and
 `MAX()+1` numbering; readers return full oldest-first histories;
 latest = last element. Old evidence is preserved per revision. Only
 UPDATEs in the system: same-run transparency timing patch and
 validation status transitions. No student-identity tables (privacy by
 absence).
+Crash-safe migration: additive-only (new columns/tables, never
+rewrites); the interaction-events nullability migration copies the
+legacy table to `interaction_events_backup` first and restores (not
+rebuilds) on failure, so original rows always survive.
 
-## 9. Transparency — `services/transparency.py`, `source_view.py`, frontend tabs + walkthrough
+## 10. Transparency — `services/transparency.py`, `source_view.py`, frontend tabs + walkthrough
 
 16 phase pipeline gears + 5/7/11/8 stage gears, each with
 input/process/output/timing/source/next. Feedback backtraces link
@@ -190,7 +304,7 @@ scrollable steps with per-step source badges
 (SPACY / SCIKIT-LEARN / WORDNET / LANGUAGETOOL / ESSAYSCAFF LOGIC /
 DATABASE / ESSAYSCAFF CONFIG), visible only in Transparency Mode.
 
-## 10. Validation — `services/validation/`, `routes/validation_routes.py`
+## 11. Validation — `services/validation/`, `routes/validation_routes.py`
 
 Pilot scope: THESIS_002 (binary META/NOT_META) and TOPIC_CLASSIFIER
 (multiclass WEAK/MODERATE/STRONG) vs frozen VR-2 production adapters
@@ -220,27 +334,36 @@ embeddings, LLMs, or overall essay scores — by design.
 
 No generative LLM; no essay grades or holistic clarity/coherence/tone
 percentages (only rule-based indicators with PASS/FAIL/status labels);
-no deep semantic understanding, entailment, or truth checking
-(grammatically valid nonsense may pass — stated in-app); no validated
-thresholds (all development values, labeled pending); no curated
-academic knowledge base; no stopword deletion; no silent history
-rewrites.
+no deep semantic understanding, entailment, truth checking, evidence
+credibility checking, or argument-quality scoring (grammatically valid
+nonsense may pass — stated in-app); topic similarity is lexical
+(TF-IDF/cosine over lemmas + keyword/WordNet overlap), never a meaning
+judgment; Writing Lab section rules (LAB_*) are experimental unless
+formally validated; formal validation data is human-dependent and has
+not started (2 DRAFT datasets, 0 samples, 0 runs — verified 2026-10-11);
+no validated thresholds (all development values, labeled pending);
+no curated academic knowledge base; no stopword deletion; no silent
+history rewrites; no auto-written essay prose (student is sole author).
 
-## 11. Research interaction analytics - `services/learning_analytics.py`, `static/js/analytics.js`
+## 12. Research interaction analytics — `services/learning_analytics.py`, `static/js/analytics.js`
 
 Append-only `interaction_events` + `stage_time_intervals` tables feed a
 read-only aggregation service. No NLP rerun, no analysis mutation, no
 predictions. Server-confirmed rows (ANALYSIS_COMPLETED, READINESS_CHANGED,
-STAGE_UNLOCKED, provenance `server`) vs client-reported rows (provenance
-`client`); aggregates prefer server rows. Active time = client-measured
-engaged milliseconds (visible tab + activity within
+STAGE_UNLOCKED, `LAB_SECTION_READY`, `ESSAY_READY_FOR_REVIEW`,
+`PROCESS_SUMMARY_VIEWED`, provenance `server`) vs client-reported rows
+(provenance `client`); aggregates prefer server rows. Active time =
+client-measured engaged milliseconds (visible tab + activity within
 `ANALYTICS_IDLE_TIMEOUT_MS` = 300000, a development/research logging
 parameter, not a validated threshold); idle/hidden/blurred gaps pause the
-clock and are never counted. Interval bounds are client-measured;
-server receipt timestamps are authoritative. Pre-first-revision typing
-accrues in memory and is attributed once the first response reveals the
-session id (lost on refresh by design). All frequencies are counts of
-stored conditions — never scores.
+clock and are never counted. Overlapping intervals are merged
+(`_union_active_ms`, overlap-adjusted — overlaps can never inflate
+aggregates; `processing_ms` is never used as writing time). Interval
+bounds are client-measured; server receipt timestamps are authoritative.
+Pre-first-revision typing accrues in memory and is attributed once the
+first response reveals the session id (lost on refresh by design). The
+lab and review workspaces aggregate under stage key `lab`. All
+frequencies are counts of stored conditions — never scores.
 
 ### Interaction-logging privacy: what is logged, why, what is not
 
@@ -259,7 +382,7 @@ No consent workflow exists in the software; do not claim consent was
 collected. Required approvals for real student data remain the
 researcher's responsibility outside this codebase.
 
-## 12. Environment setup / reproducibility
+## 13. Environment setup / reproducibility
 
 Verified working environment (do not treat looser bounds as tested):
 

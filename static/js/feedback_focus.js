@@ -181,6 +181,26 @@
     ],
   };
 
+  /* Lab section checklist specs (experimental LAB_* readiness, same
+   * marker policy as stages; capped at 5 rows like stages). */
+  var LAB_CHECKLISTS = {
+    introduction: [
+      { cond: "I1", label: "Enough development", block: ["LAB_INTRO_001"] },
+      { cond: "I2", label: "Topic connection", block: ["LAB_INTRO_002"] },
+      { cond: "I3", label: "Central direction present", block: ["LAB_INTRO_003"] },
+      { cond: "I4", label: "No blocking issues", block: ["LAB_INTRO_004"] },
+    ],
+    body: [
+      { cond: "B1", label: "Body structure", block: ["LAB_BODY_001"] },
+      { cond: "B2", label: "Main claim present", block: ["LAB_BODY_002"] },
+      { cond: "B3", label: "Thesis/outline connection", block: ["LAB_BODY_003", "LAB_BODY_004"] },
+    ],
+    conclusion: [
+      { cond: "C1", label: "Sufficient conclusion text", block: ["LAB_CONC_001"] },
+      { cond: "C2", label: "Return to main direction", block: ["LAB_CONC_002"] },
+    ],
+  };
+
   function stageDatum(ws) {
     try {
       var ES = window.EssayScaff || {};
@@ -257,8 +277,11 @@
         }
       });
     } else if (ws === "studentSection") {
+      // Current section's own analysis (falls back to the latest analysis
+      // when the section was never analyzed in this browser state).
       var ES = window.EssayScaff || {};
-      var a = ES.lastData || null;
+      var lab = (ES.lastLab || {})[labMode()];
+      var a = (lab && lab.analysis) || ES.lastData || null;
       if (!a) return out;
       var cls = ((a.summary || {}).topic_classification) || null;
       if (cls === "MODERATE" || cls === "STRONG") push("Topic is connected", "topic_classification");
@@ -276,9 +299,23 @@
     return out.slice(0, 3);
   }
 
+  function labDatum() {
+    try {
+      var lab = (window.EssayScaff || {}).lastLab || {};
+      return lab[labMode()] || null;
+    } catch (e) { return null; }
+  }
+
   function computeChecklist(ws) {
-    var spec = CHECKLISTS[ws];
-    var d = stageDatum(ws);
+    var spec, d;
+    if (ws === "studentSection") {
+      spec = (LAB_CHECKLISTS || {})[labMode()];
+      var ld = labDatum();
+      d = ld ? { readiness: ld.readiness || {} } : null;
+    } else {
+      spec = CHECKLISTS[ws];
+      d = stageDatum(ws);
+    }
     if (!spec || !d) return [];
     var r = d.readiness || {};
     var blocking = r.blocking_rules || r.blocking || [];
@@ -388,6 +425,27 @@
     return sel ? sel.value : "introduction";
   }
 
+  /* State-aware Next Step for Stage 1 (display only — readiness is read,
+   * never altered). Deterministic static wording, no generation:
+   * blocked -> address the requirement first; ready -> point at the thesis;
+   * ready with an active guidance card -> continue is open, polish optional.
+   * Pre-analysis (no readiness yet) keeps the neutral static line. */
+  var STAGE1_NEXT = {
+    blocked: "Develop this idea a little more before moving to your thesis.",
+    ready: "Your idea is ready. Continue to turn it into one clear thesis.",
+    readyAdvisory: "You're ready to continue. You can also improve the suggestion above first.",
+  };
+  function stage1Next() {
+    var d = null;
+    try { d = (window.EssayScaff || {}).lastStage1 || null; } catch (e) { d = null; }
+    var r = (d && d.readiness) || null;
+    if (!r || typeof r.stage2_allowed === "undefined") return NEXTS.stage1Section;
+    if (r.stage2_allowed !== true) return STAGE1_NEXT.blocked;
+    var slot = STAGE_SLOTS.stage1Section;
+    if (slot && whyBySlot[slot]) return STAGE1_NEXT.readyAdvisory;
+    return STAGE1_NEXT.ready;
+  }
+
   /* The coaching dashboard: goal + primary (existing slots) + why +
    * working + next + checklist + snapshot + previous. Everything reflects
    * the CURRENT workspace tab; sections without supported data hide. */
@@ -403,7 +461,8 @@
     }
     var nextEl = $("dashNext");
     if (nextEl) {
-      var next = ws === "studentSection" ? NEXTS[labMode()] : NEXTS[ws];
+      var next = ws === "studentSection" ? NEXTS[labMode()]
+        : (ws === "stage1Section" ? stage1Next() : NEXTS[ws]);
       if (next) {
         nextEl.innerHTML = '<p class="dash-eyebrow">Next step</p><p>' + esc(next) + "</p>";
         nextEl.hidden = false;
@@ -426,6 +485,10 @@
       var rows = computeChecklist(ws);
       var titles = { stage1Section: "Idea checklist", stage2Section: "Thesis checklist",
         stage3Section: "Outline checklist", stage4Section: "Reflection checklist" };
+      if (ws === "studentSection") {
+        var lm = labMode();
+        titles.studentSection = lm.charAt(0).toUpperCase() + lm.slice(1) + " checklist";
+      }
       if (!rows.length) { checkEl.hidden = true; checkEl.innerHTML = ""; }
       else {
         var marks = { ok: ["✓", "ok"], open: ["○", "open"], crit: ["!", "crit"] };
@@ -443,7 +506,12 @@
 
   function analysisFor(ws) {
     if (ws === "studentSection") {
-      try { return (window.EssayScaff || {}).lastData || null; }
+      try {
+        var ES2 = window.EssayScaff || {};
+        var lab2 = (ES2.lastLab || {})[labMode()];
+        if (lab2 && lab2.analysis) return lab2.analysis;
+        return ES2.lastData || null;
+      }
       catch (e) { return null; }
     }
     var d = stageDatum(ws);
@@ -609,6 +677,7 @@
     goalTextForLab: function (mode) { return GOALS[mode] || null; },
     nextText: function (ws, labMode) {
       if (ws === "studentSection") return NEXTS[labMode] || null;
+      if (ws === "stage1Section") return stage1Next();
       return NEXTS[ws] || null;
     },
     computeWorking: computeWorking,

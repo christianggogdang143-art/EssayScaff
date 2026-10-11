@@ -46,7 +46,7 @@
   /* ---------------- workspace stage tabs ---------------- */
   // One workspace section visible at a time (Stage 1 default). Hide/show
   // only — drafts, histories, and listeners are untouched.
-  var WS_SECTIONS = ["stage1Section", "stage2Section", "stage3Section", "stage4Section", "studentSection"];
+  var WS_SECTIONS = ["stage1Section", "stage2Section", "stage3Section", "stage4Section", "studentSection", "reviewSection"];
   function showWorkspace(id) {
     document.querySelectorAll("#workspaceTabs .tab").forEach(function (x) {
       var on = x.getAttribute("data-ws") === id;

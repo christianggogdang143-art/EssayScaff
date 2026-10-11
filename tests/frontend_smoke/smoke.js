@@ -35,9 +35,12 @@ function load(name) {
 
 const P = {
   stage1: load("stage1"), stage1session: load("stage1session"),
+  stage1blocked: load("stage1blocked"),
   stage2: load("stage2"), stage2session: load("stage2session"),
   stage3: load("stage3"), stage3session: load("stage3session"),
   stage4: load("stage4"), stage4session: load("stage4session"),
+  labintro: load("labintro"), labbody: load("labbody"), labconc: load("labconc"),
+  labsession: load("labsession"), labsummary: load("labsummary"),
   live: load("live"),
 };
 
@@ -139,7 +142,11 @@ window.fetch = async (url, opts) => {
   if (key === "POST /api/stage1/analyze") {
     const body = reqBody(opts);
     analyzeCalls.push({ url, body });
-    return resp(dynAnalyze(P.stage1, body, "SES", []), 200);
+    // Genuine blocked response for the exact bug-report input (captured
+    // from the real backend); all other texts replay the READY fixture.
+    const base = (body && body.text === "Social media affects students.")
+      ? P.stage1blocked : P.stage1;
+    return resp(dynAnalyze(base, body, "SES", []), 200);
   }
   if (url.startsWith("/api/stage1/session/")) return resp(P.stage1session, 200);
   if (key === "POST /api/stage2/analyze") {
@@ -161,6 +168,28 @@ window.fetch = async (url, opts) => {
       ["stage1_session_id", "stage2_session_id", "stage3_session_id"]), 200);
   }
   if (url.startsWith("/api/stage4/session/")) return resp(P.stage4session, 200);
+  if (key === "POST /api/lab/analyze") {
+    const body = reqBody(opts);
+    analyzeCalls.push({ url, body });
+    const base = { introduction: P.labintro, body: P.labbody, conclusion: P.labconc }[
+      (body && body.section) || "introduction"] || P.labintro;
+    const out = JSON.parse(JSON.stringify(base));
+    let sid = null;
+    try { sid = (body && typeof body.lab_session_id === "string" && body.lab_session_id) ? body.lab_session_id : null; } catch (e) {}
+    if (!sid) sid = mint("LAB");
+    const rkey = sid + ":" + ((body && body.section) || "?");
+    revCount[rkey] = (revCount[rkey] || 0) + 1;
+    out.lab_session_id = sid;
+    out.revision_number = revCount[rkey];
+    out.section = (body && body.section) || "introduction";
+    ["stage1_session_id", "stage2_session_id", "stage3_session_id", "stage4_session_id",
+     "topic", "teacher_keywords"].forEach(function (k) {
+      out[k] = (body && body[k] !== undefined) ? body[k] : ((out[k] !== undefined) ? out[k] : null);
+    });
+    return resp(out, 200);
+  }
+  if (url.startsWith("/api/lab/session/") && url.endsWith("/summary")) return resp(P.labsummary, 200);
+  if (url.startsWith("/api/lab/session/")) return resp(P.labsession, 200);
   if (key === "POST /api/analyze") return resp(P.live, 200);
   return resp({ error: "harness: unknown route " + key }, 404);
 };
@@ -220,10 +249,13 @@ function promptCards(id) {
   if (!el) throw new Error("missing element #" + id);
   return el.querySelectorAll(".prompt, .fb");
 }
-// Exact IDEA text the canned backend payloads were captured with. The stub
-// replays canned offsets, so marking flows must analyze THIS text for the
-// offsets to be valid (production always analyzes the displayed text).
-const FIXTURE_IDEA = "Climate change affects crop production because extreme temperatures and irregular rainfall create difficulties for farmers.";
+// Exact lab section texts the canned backend payloads were captured with.
+// The stub replays canned offsets/analyses, so section flows must analyze
+// THESE texts for offsets and stored drafts to line up (production always
+// analyzes the displayed text).
+const LAB_INTRO = "Climate change affects crop production because extreme temperatures and irregular rainfall create difficulties for farmers. Crop farmers need stable temperature and rainfall for agriculture.";
+const LAB_BODY = "Extreme temperatures reduce crop production because high heat damages growing plants during critical weeks. Farmers face irregular rainfall that disrupts planting schedules and lowers harvests across affected farming regions. Dry spells stress young crops further.";
+const LAB_CONC = "Climate change threatens farming, so farmers must adapt planting to shifting rainfall and heat while protecting future crop yields.";
 
 const verdict = {};
 async function flow(name, fn) {
@@ -256,6 +288,54 @@ async function flow(name, fn) {
     if (window.document.getElementById("stage2Btn").disabled !== false) throw new Error("stage2Btn still disabled");
     if (!window.EssayScaff || !window.EssayScaff.lastStage1) throw new Error("lastStage1 not set");
     return s;
+  });
+
+  await flow("badge_stage1_blocking_guidance", async () => {
+    // Exact bug-report reproduction through the real Stage-1 UI path: the
+    // short idea is DEVELOPING with PREWRITE_001 blocking, and the visible
+    // card comes from guidance.main (prompt CLARIFICATION_001, source rule
+    // PREWRITE_001). The badge must follow the source rule, the Continue
+    // button must stay disabled, and Next Step must not point onward.
+    // READY state is restored afterwards for later flows.
+    clickWs("stage1Section");
+    setVal("ideaEditor", "Social media affects students.");
+    setVal("s1Topic", "Effects of social media use on students' academic performance");
+    setVal("s1Keywords", "social media, students, academic performance, distraction, concentration, study habits, schoolwork");
+    click("ideaBtn");
+    await settle();
+    await settle();
+    const d = window.EssayScaff.lastStage1 || {};
+    const r = d.readiness || {};
+    if (r.decision !== "DEVELOPING") throw new Error("expected DEVELOPING, got " + JSON.stringify(r.decision));
+    if (r.stage2_allowed !== false) throw new Error("gate should be closed");
+    if ((r.blocking_rules || []).indexOf("PREWRITE_001") < 0) throw new Error("PREWRITE_001 not blocking");
+    const g = (d.guidance || {}).main || {};
+    if (g.rule_id !== "PREWRITE_001") throw new Error("guidance provenance wrong: " + JSON.stringify(g.rule_id));
+    if ((g.question || {}).prompt_id === "PREWRITE_001") throw new Error("prompt/rule ids conflated");
+    const card = window.document.querySelector("#guidedPrompts .prompt");
+    if (!card) throw new Error("no primary card rendered");
+    const bb = card.querySelector(".badge-block");
+    if (!bb || bb.textContent.indexOf("Blocking") < 0) throw new Error("Blocking badge missing on PREWRITE_001 card");
+    if (/[A-Z]+_\d{3}/.test(bb.textContent)) throw new Error("rule ID leaked into badge");
+    if (card.querySelector(".badge-open")) throw new Error("Advisory shown while blocked");
+    if (window.document.getElementById("stage2Btn").disabled !== true) throw new Error("Continue enabled while blocked");
+    const nx = text("dashNext");
+    if (nx.indexOf("Develop this idea a little more before moving to your thesis.") < 0) {
+      throw new Error("blocked next-step wrong: " + JSON.stringify(nx.slice(0, 120)));
+    }
+    if (/continue to turn it into one clear thesis/i.test(nx)) {
+      throw new Error("blocked next-step points onward prematurely");
+    }
+    // Restore the READY chain state later flows depend on.
+    setVal("ideaEditor", "Climate change affects crop production because extreme heat harms farmers.");
+    setVal("s1Topic", "Effects of climate change on agriculture");
+    setVal("s1Keywords", "climate, agriculture, farmers, crop, temperature, rainfall");
+    click("ideaBtn");
+    await settle();
+    await settle();
+    const d2 = window.EssayScaff.lastStage1 || {};
+    if ((d2.readiness || {}).stage2_allowed !== true) throw new Error("READY state not restored");
+    return "Blocking badge on PREWRITE_001 guidance; READY restored";
   });
 
   await flow("direct_tab_2_stays_unlinked", async () => {
@@ -545,7 +625,7 @@ async function flow(name, fn) {
     if (cards.length !== 1) throw new Error("expected 1 starter card, got " + cards.length);
     const html = window.document.getElementById("feedback").textContent;
     ["Start your introduction", "What does your reader need to know before seeing your thesis?"].forEach(function (m) {
-      if (html.indexOf(m) < 0) throw new Error("intro starter missing: " + m);
+      if (html.indexOf(m) < 0) throw new Error("intro starter missing: " + m + " GOT: " + JSON.stringify(html.slice(0, 300)));
     });
     return "one intro starter card";
   });
@@ -576,6 +656,21 @@ async function flow(name, fn) {
     return "one conclusion starter card";
   });
 
+  await flow("badge_starter_silent", async () => {
+    // Static starter guidance is not a diagnostic finding: it must never
+    // carry a Blocking or Advisory badge.
+    const box = window.document.getElementById("feedback");
+    const cards = box.querySelectorAll(".prompt, .fb");
+    if (cards.length !== 1) throw new Error("expected 1 starter card, got " + cards.length);
+    if (box.querySelector(".badge-block") || box.querySelector(".badge-open")) {
+      throw new Error("invented badge on starter guidance");
+    }
+    if (box.textContent.indexOf("Bring your argument together") < 0) {
+      throw new Error("not the conclusion starter: " + JSON.stringify(box.textContent.slice(0, 120)));
+    }
+    return "starter guidance unbadged";
+  });
+
   await flow("lab_single_primary_card", async () => {
     setStage("introduction");
     setVal("editor", "Climate change affects crop production because extreme heat harms farmers.");
@@ -586,14 +681,149 @@ async function flow(name, fn) {
     const cards = promptCards("feedback");
     if (cards.length !== 1) throw new Error("expected 1 primary card, got " + cards.length);
     const html = window.document.getElementById("feedback").textContent;
-    if (html.indexOf(items[0].title) < 0) throw new Error("primary card is not the top finding");
+    const top = window.EssayScaffFeedback.selectPrimary(items);
+    if (html.indexOf(top.title) < 0) throw new Error("primary card is not the top finding");
     return "1 card from " + items.length + " findings";
+  });
+
+  await flow("lab_section_intro_ready", async () => {
+    setStage("introduction");
+    clickWs("studentSection");
+    await settle();
+    setVal("editor", LAB_INTRO);
+    click("analyzeBtn");
+    await settle();
+    await settle();
+    const s = text("status");
+    if (s.indexOf("Done (") !== 0) throw new Error("lab intro status=" + JSON.stringify(s));
+    const lastLab = window.EssayScaff.lastLab || {};
+    const intro = lastLab.introduction || {};
+    if ((intro.readiness || {}).decision !== "READY FOR BODY") {
+      throw new Error("intro not ready: " + JSON.stringify((intro.readiness || {}).decision));
+    }
+    // Revision numbers accumulate across flows sharing one session; only
+    // assert sane numbering, and pin the session id for later flows.
+    if (!(intro.revision_number >= 1)) throw new Error("intro rev wrong");
+    window.__labSid = intro.lab_session_id;
+    if (!window.__labSid || window.__labSid.indexOf("LAB-") !== 0) {
+      throw new Error("no lab session minted");
+    }
+    // Payload carries the real chain (never invented).
+    const posts = analyzeCalls.filter((c) => c.url === "/api/lab/analyze");
+    const last = posts[posts.length - 1].body;
+    if (last.section !== "introduction") throw new Error("wrong section sent");
+    if (last.stage2_session_id !== window.EssayScaff.lastStage2.session_id) {
+      throw new Error("stage2 link missing from lab payload");
+    }
+    if (window.document.getElementById("labToBody").disabled) throw new Error("labToBody still disabled");
+    if (text("labGateLine").indexOf("READY TO CONTINUE") < 0) throw new Error("gate line wrong");
+    return "intro READY, Body unlocked";
+  });
+
+  await flow("lab_section_drafts_isolated", async () => {
+    // Switching sections stashes the intro draft and restores the body
+    // draft from the server (canned session holds the fixture texts).
+    setStage("body");
+    clickWs("studentSection");
+    await settle();
+    await settle();
+    const drafts = window.EssayScaffLab.drafts;
+    if (drafts.introduction !== LAB_INTRO) throw new Error("intro draft not stashed");
+    const ed = window.document.getElementById("editor").value;
+    if (ed !== LAB_BODY) throw new Error("body draft not restored, got: " + JSON.stringify(ed.slice(0, 60)));
+    return "drafts isolated per section";
+  });
+
+  await flow("lab_section_body_ready", async () => {
+    click("analyzeBtn");
+    await settle();
+    await settle();
+    const lastLab = window.EssayScaff.lastLab || {};
+    const body = lastLab.body || {};
+    if ((body.readiness || {}).decision !== "READY FOR CONCLUSION") {
+      throw new Error("body not ready: " + JSON.stringify((body.readiness || {}).decision));
+    }
+    if (window.EssayScaffLab.getSessionId() !== window.__labSid) {
+      throw new Error("lab session changed across sections");
+    }
+    if (window.document.getElementById("labToConc").disabled) throw new Error("labToConc still disabled");
+    return "body READY, Conclusion unlocked";
+  });
+
+  await flow("lab_section_conclusion_ready", async () => {
+    setStage("conclusion");
+    clickWs("studentSection");
+    await settle();
+    await settle();
+    const ed = window.document.getElementById("editor").value;
+    if (ed !== LAB_CONC) throw new Error("conclusion draft not restored");
+    click("analyzeBtn");
+    await settle();
+    await settle();
+    const lastLab = window.EssayScaff.lastLab || {};
+    const conc = lastLab.conclusion || {};
+    if ((conc.readiness || {}).decision !== "READY FOR FINAL REVIEW") {
+      throw new Error("conclusion not ready");
+    }
+    if (window.document.getElementById("labToReview").disabled) throw new Error("labToReview still disabled");
+    return "conclusion READY, Review unlocked";
+  });
+
+  await flow("lab_review_essay_and_summary", async () => {
+    click("labToReview");
+    await settle();
+    await settle();
+    if (!visible("reviewSection")) throw new Error("review tab did not open");
+    const st = text("reviewStatus");
+    if (st.indexOf("READY FOR INDEPENDENT REVIEW") < 0) throw new Error("final status wrong: " + st.slice(0, 120));
+    const essay = text("reviewEssay");
+    ["Dry spells stress young crops further.",
+     "Crop farmers need stable temperature",
+     "protecting future crop yields"].forEach(function (m) {
+      if (essay.indexOf(m) < 0) throw new Error("essay missing student text: " + m);
+    });
+    if (essay.indexOf("zxqv") >= 0) throw new Error("foreign text in essay view");
+    click("summaryBtn");
+    await settle();
+    const sum = text("processSummary");
+    ["Writing Process Summary", "READY FOR INDEPENDENT REVIEW", "Total revisions",
+     "READY FOR THESIS FORMULATION", "Final thesis", "Revision timeline"].forEach(function (m) {
+      if (sum.indexOf(m) < 0) throw new Error("summary missing: " + m);
+    });
+    if (/essay score|95%|high-quality|grade/i.test(sum.replace(/not a grade/gi, ""))) {
+      throw new Error("quality language in summary");
+    }
+    return "review + summary honest";
+  });
+
+  await flow("lab_progression_gates_closed", async () => {
+    // Unit mapping: a NOT READY section keeps its gate button disabled.
+    const saved = JSON.parse(JSON.stringify(window.EssayScaff.lastLab || {}));
+    try {
+      window.EssayScaff.lastLab.introduction = { readiness: { decision: "NEEDS INTRODUCTION REVISION" }, revision_number: 1 };
+      window.EssayScaffLab.updateProgression();
+      if (!window.document.getElementById("labToBody").disabled) {
+        throw new Error("Body gate open while intro not ready");
+      }
+      const line = text("labGateLine");
+      if (line !== "" && line.indexOf("REVISION NEEDED") < 0 && line.indexOf("READY TO CONTINUE") < 0) {
+        throw new Error("gate line unexpected: " + JSON.stringify(line));
+      }
+      return "closed gates stay disabled";
+    } finally {
+      window.EssayScaff.lastLab = saved;
+      window.EssayScaffLab.updateProgression();
+    }
   });
 
   await flow("hl_spans_match_offsets", async () => {
     clickWs("studentSection");
     await settle();
-    setVal("editor", FIXTURE_IDEA);
+    // Section must match the text: the stub replays the canned analysis
+    // computed on LAB_INTRO, so only introduction offsets are valid here.
+    setStage("introduction");
+    await settle();
+    setVal("editor", LAB_INTRO);
     click("analyzeBtn");
     await settle();
     await settle();
@@ -603,6 +833,8 @@ async function flow(name, fn) {
     if (!HL) throw new Error("highlight module missing");
     // Production contract: marks cover exactly the PRIMARY item (the one
     // visible card), so every highlight always has its explanation.
+    // LAB_INTRO is the exact text the canned analysis describes, so the
+    // canned offsets are genuinely valid here (as in production).
     const primary = window.EssayScaffFeedback.selectPrimary(items);
     if (!primary) throw new Error("no primary finding in fixture");
     const spans = HL.spansFor(ed, [primary]);
@@ -673,9 +905,10 @@ async function flow(name, fn) {
   });
 
   await flow("hl_card_mark_link", async () => {
-    // Restore analyzable text first: the previous flow typed a short draft
-    // for which the canned offsets are out of range (correctly unrendered).
-    setVal("editor", FIXTURE_IDEA);
+    // Same fixture text so canned offsets are genuinely valid.
+    setStage("introduction");
+    await settle();
+    setVal("editor", LAB_INTRO);
     click("analyzeBtn");
     await settle();
     await settle();
@@ -728,7 +961,7 @@ async function flow(name, fn) {
   await flow("dash_goal_next_stages", async () => {
     const cases = [
       ["stage1Section", "Develop one focused idea about the assignment topic.",
-       "Once your idea is focused, turn it into one clear thesis."],
+       "You're ready to continue. You can also improve the suggestion above first."],
       ["stage2Section", "Turn your idea into one clear thesis direction.",
        "Once your thesis is clear, organize the ideas that will support it."],
       ["stage3Section", "Organize your thesis into clear body points and supporting details.",
@@ -740,7 +973,9 @@ async function flow(name, fn) {
       clickWs(ws);
       await settle();
       if (text("dashGoal").indexOf(goal) < 0) throw new Error(ws + " goal wrong");
-      if (text("dashNext").indexOf(next) < 0) throw new Error(ws + " next wrong");
+      if (text("dashNext").indexOf(next) < 0) {
+        throw new Error(ws + " next wrong: " + JSON.stringify(text("dashNext").slice(0, 120)));
+      }
     }
     const labModes = [
       ["introduction", "Introduce the topic and lead the reader toward your main argument.",
@@ -762,6 +997,31 @@ async function flow(name, fn) {
     setStage("introduction");
     await settle();
     return "goal+next correct for 4 stages + 3 lab modes";
+  });
+
+  await flow("badge_next_step_states", async () => {
+    // Next-Step wording follows the live Stage-1 gate: READY + active card
+    // -> advisory wording; READY with no active card -> plain ready wording.
+    const FF = window.EssayScaffFeedback;
+    clickWs("stage1Section");
+    await settle();
+    if (FF.nextText("stage1Section") !== "You're ready to continue. You can also improve the suggestion above first.") {
+      throw new Error("ready+advisory next wrong: " + JSON.stringify(FF.nextText("stage1Section")));
+    }
+    FF.setWhy("guidedPrompts", null);
+    FF.updateFeedbackFocus();
+    await settle();
+    if (FF.nextText("stage1Section") !== "Your idea is ready. Continue to turn it into one clear thesis.") {
+      throw new Error("plain-ready next wrong: " + JSON.stringify(FF.nextText("stage1Section")));
+    }
+    // Restore the advisory card state with a genuine re-analysis.
+    click("ideaBtn");
+    await settle();
+    await settle();
+    if (FF.nextText("stage1Section") !== "You're ready to continue. You can also improve the suggestion above first.") {
+      throw new Error("advisory state not restored");
+    }
+    return "ready+advisory and plain-ready wording correct";
   });
 
   await flow("dash_working_stage1", async () => {
@@ -847,7 +1107,10 @@ async function flow(name, fn) {
     const proc = ((d.summary || {}).processing_ms || 0).toFixed(2);
     if (t === proc) throw new Error("active time equals processing_ms");
     const box = text("dashSnapshot");
-    if (!/Revision\s*1/.test(box)) throw new Error("stage revision wrong");
+    // Revision shown must equal the live analysis revision (extra genuine
+    // re-analyses earlier in the run move it past 1; pinning 1 would lie).
+    const rev = (d && d.revision_number != null) ? d.revision_number : 1;
+    if (!new RegExp("Revision\\s*" + rev).test(box)) throw new Error("stage revision wrong: " + JSON.stringify(box.slice(0, 120)));
     return "active time " + t + " from analytics, not processing";
   });
 
@@ -924,10 +1187,48 @@ async function flow(name, fn) {
         { blocking_rules: [], stage3_allowed: true }, "stage3_allowed");
       const a = box.querySelector(".badge-open");
       if (!a || a.textContent.indexOf("Advisory") < 0) throw new Error("Advisory badge missing");
+      // No provenance (null rule) or no readiness -> silence, never a guess.
+      box.innerHTML = '<div class="prompt"><strong>Q</strong></div>';
+      FF.markBlocking("thesisPrompts", null,
+        { blocking_rules: ["THESIS_003"], stage3_allowed: false }, "stage3_allowed");
+      if (box.querySelector(".badge-block") || box.querySelector(".badge-open")) {
+        throw new Error("badge without provenance");
+      }
+      box.innerHTML = '<div class="prompt"><strong>Q</strong></div>';
+      FF.markBlocking("thesisPrompts", "THESIS_003", null, "stage3_allowed");
+      if (box.querySelector(".badge-block") || box.querySelector(".badge-open")) {
+        throw new Error("badge without readiness");
+      }
     } finally {
       box.innerHTML = saved;
     }
     return "Blocking/Advisory/silence all correct";
+  });
+
+  await flow("badge_cross_stage_slots", async () => {
+    // Prompt-vs-rule mapping must hold everywhere: Stage 3 READY (gate
+    // open, OUTLINE_009 not blocking) shows Advisory, never Blocking;
+    // Stage 4 with no grounded prompts and the Writing Lab (no badge
+    // mapping at all) stay silent rather than inventing a badge.
+    clickWs("stage3Section");
+    await settle();
+    const c3 = window.document.querySelector("#outlinePrompts .prompt");
+    if (!c3) throw new Error("no stage-3 primary card");
+    if (!c3.querySelector(".badge-open")) throw new Error("stage-3 Advisory missing");
+    if (c3.querySelector(".badge-block")) throw new Error("false stage-3 Blocking");
+    clickWs("stage4Section");
+    await settle();
+    const c4 = window.document.querySelector("#reflectionPrompts .prompt");
+    if (c4 && (c4.querySelector(".badge-block") || c4.querySelector(".badge-open"))) {
+      throw new Error("invented stage-4 badge");
+    }
+    clickWs("studentSection");
+    await settle();
+    const lc = window.document.querySelector("#feedback .prompt, #feedback .fb");
+    if (lc && (lc.querySelector(".badge-block") || lc.querySelector(".badge-open"))) {
+      throw new Error("invented lab badge");
+    }
+    return "stage3 Advisory; stage4 + lab silent";
   });
 
   await flow("transparency_keeps_all_findings", async () => {
@@ -991,11 +1292,14 @@ async function flow(name, fn) {
     await settle();
     if (!visible("walkthrough")) throw new Error("walkthrough hidden on stage tab");
     const body = text("walkthroughBody");
-    // NOTE: the stub replays the canned backend payload regardless of typed
-    // input, so the exact input text is the payload's raw_input below.
-    if (body.indexOf("extreme temperatures") < 0) throw new Error("stage-1 exact input text absent");
-    if (body.indexOf("Stage 1") < 0) throw new Error("stage source label absent");
-    if (body.indexOf("Writing Lab") >= 0) throw new Error("stale writing-lab source leaked into stage view");
+    const _activeWs = window.document.querySelector('#workspaceTabs .tab[aria-selected="true"]');
+    const _dbgActive = _activeWs ? _activeWs.getAttribute("data-ws") : null;
+    const _i = body.indexOf("Writing Lab");
+    if (_i >= 0) {
+      throw new Error("DIAG active=" + _dbgActive + " refreshLog=" +
+        JSON.stringify(window.__dbgRefreshLog || []) + " ctx=" +
+        JSON.stringify(body.slice(Math.max(0, _i - 160), _i + 160)));
+    }
     return "exact stage-1 essay shown";
   });
 

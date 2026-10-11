@@ -34,6 +34,7 @@
         <button type="button" class="tab" data-ws="stage3Section" role="tab" aria-selected="false">Stage 3</button>
         <button type="button" class="tab" data-ws="stage4Section" role="tab" aria-selected="false">Stage 4</button>
         <button type="button" class="tab" data-ws="studentSection" role="tab" aria-selected="false">Writing Lab</button>
+        <button type="button" class="tab" data-ws="reviewSection" role="tab" aria-selected="false">Review</button>
       </div>
       <section class="card" id="stage1Section" aria-labelledby="s1h">
         <h2 id="s1h">Stage 1 — Pre-Writing &amp; Idea Generation</h2>
@@ -188,9 +189,28 @@
               <option value="body">body</option>
               <option value="conclusion">conclusion</option>
             </select>
+            <p class="hint">Free navigation for research; the buttons below enforce readiness order.</p>
           </div>
         </div>
         <p class="statusline" id="status" aria-live="polite"></p>
+        <div class="controls">
+          <button id="labToBody" type="button" disabled>Continue to Body</button>
+          <button id="labToConc" type="button" disabled>Continue to Conclusion</button>
+          <button id="labToReview" type="button" disabled>Go to Final Review</button>
+        </div>
+        <p class="hint" id="labGateLine" aria-live="polite"></p>
+      </section>
+
+      <section class="card" id="reviewSection" aria-labelledby="revh" hidden>
+        <h2 id="revh">Final Review <span class="ro">read-only</span></h2>
+        <div id="reviewStatus"><p class="hint">Analyze all three essay sections first.</p></div>
+        <h3>Your Essay <span class="ro">your saved section drafts, unedited</span></h3>
+        <div id="reviewEssay"><p class="hint">No saved essay sections yet.</p></div>
+        <div class="controls">
+          <button id="summaryBtn" type="button">View My Writing Process</button>
+          <button id="summaryRefreshBtn" type="button">Refresh</button>
+        </div>
+        <div id="processSummary"><p class="hint">Your writing process summary will appear here.</p></div>
       </section>
     </div>
 

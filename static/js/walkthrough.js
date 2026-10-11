@@ -77,6 +77,8 @@
       return { analysis: ES.lastData, stageDatum: null,
         sourceLabel: "Writing Lab — " + (ES.lastData.analysis_id || "?") };
     }
+    // Final Review assembles stored text; it has no analysis of its own.
+    if (sec === "reviewSection") return empty("Review");
     var map = { stage1Section: ["lastStage1", "Stage 1"], stage2Section: ["lastStage2", "Stage 2"],
       stage3Section: ["lastStage3", "Stage 3"], stage4Section: ["lastStage4", "Stage 4"] };
     if (map[sec]) {
@@ -400,6 +402,23 @@
       "Every heuristic rule, in backend evaluation order — triggered or not.", body);
   }
 
+  /* Writing Lab experimental rules (LAB_* namespace, NOT VR-2) as stored
+   * in the current browser state. Display only; absence renders honestly.
+   * Shown only on the Writing Lab tab: the walkthrough follows the active
+   * tab, so stage tabs never leak lab content (or vice versa). */
+  function labStageData() {
+    if (activeWs() !== "studentSection") return [];
+    var ES = window.EssayScaff || {};
+    var lab = ES.lastLab || {};
+    var out = [];
+    [["introduction", "Writing Lab — Introduction"], ["body", "Writing Lab — Body"],
+     ["conclusion", "Writing Lab — Conclusion"]].forEach(function (pair) {
+      var d = lab[pair[0]];
+      if (d && (d.lab_session_id || d.revision_number != null)) out.push({ mode: pair[0], label: pair[1], d: d });
+    });
+    return out;
+  }
+
   function sStageRules() {
     var stages = stageSessions();
     if (!stages.length) return step("15", "wt-s15", "Stage-specific analysis", "ESSAYSCAFF LOGIC",
@@ -419,6 +438,15 @@
         " · revision " + esc(st.d.revision_number) + "</span></h4>" +
         (rows ? '<div class="tablewrap table-scroll"><table><thead><tr><th>Rule</th><th>Result</th><th>Priority</th><th>Explanation</th></tr></thead><tbody>' +
           rows + "</tbody></table></div>" : na("no rule list in " + st.label + " response"));
+    }).join("") + labStageData().map(function (st) {
+      var rows = ((st.d.lab_rules || []).map(function (r) {
+        return "<tr><td><code>" + esc(r.rule_id) + "</code></td><td>" + esc(r.status) +
+          "</td><td>" + esc(r.blocking ? "BLOCKING" : "ADVISORY") + "</td><td>" + esc(r.reason || "") + "</td></tr>";
+      }).join(""));
+      return "<h4>" + esc(st.label) + " <span class='wt-src'>lab session " + esc(st.d.lab_session_id || "?") +
+        " · revision " + esc(st.d.revision_number) + " · experimental, not VR-2</span></h4>" +
+        (rows ? '<div class="tablewrap table-scroll"><table><thead><tr><th>Rule</th><th>Result</th><th>Gate</th><th>Explanation</th></tr></thead><tbody>' +
+          rows + "</tbody></table></div>" : na("no lab rule list stored for " + st.label));
     }).join("") +
       (hasOutline ? '<p class="hint">Unity, alignment, and progression statuses above are rule-based structural ' +
         "indicators derived from lexical concept alignments — not deep semantic judgments. EssayScaff may not " +
@@ -483,6 +511,18 @@
         (names[st.n] ? "<p>Gate flag <code>" + names[st.n] + "</code>: <strong>" +
           esc(r[names[st.n]] === undefined ? "n/a" : (r[names[st.n]] ? "TRUE" : "FALSE")) + "</strong></p>"
           : (allowedFlags(r) ? "<p>" + esc(allowedFlags(r)) + "</p>" : "")) +
+        ((r.blocking_rules && r.blocking_rules.length) ? "<p>Blocking rules: <code>" + esc(r.blocking_rules.join(", ")) + "</code></p>"
+          : "<p>Blocking rules: none.</p>");
+    }).join("") + labStageData().map(function (st) {
+      var r = st.d.readiness || {};
+      var conds = (r.conditions || []).map(function (c) {
+        return "<tr><td><code>" + esc(c.id) + "</code></td><td>" + esc(c.name) + "</td><td><strong>" +
+          esc(c.result) + "</strong></td><td>" + esc(c.detail || "") + "</td></tr>";
+      }).join("");
+      return "<h4>" + esc(st.label) + " (experimental section rules)</h4>" +
+        (conds ? '<div class="tablewrap table-scroll"><table><thead><tr><th>ID</th><th>Condition</th><th>Result</th><th>Detail</th></tr></thead><tbody>' +
+          conds + "</tbody></table></div>" : na("no condition list stored for " + st.label)) +
+        "<p><strong>FINAL DECISION:</strong> " + esc(r.decision || "n/a") + "</p>" +
         ((r.blocking_rules && r.blocking_rules.length) ? "<p>Blocking rules: <code>" + esc(r.blocking_rules.join(", ")) + "</code></p>"
           : "<p>Blocking rules: none.</p>");
     }).join("");

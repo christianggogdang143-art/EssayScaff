@@ -15,6 +15,46 @@
   const overviewEl = document.getElementById("overview");
   const stageEl = document.getElementById("stage");
 
+  /* Writing Lab section model (presentation state only — the server owns
+   * revisions). One draft buffer per section; switching sections stashes
+   * the current text and loads the other section's draft (memory first,
+   * then the server's latest saved revision, else empty). Nothing is ever
+   * generated: drafts hold only text the student typed. */
+  const drafts = { introduction: "", body: "", conclusion: "" };
+  let labSessionId = null;
+  try { labSessionId = sessionStorage.getItem("essayscaff.labSession") || null; } catch (e) { /* private */ }
+
+  function currentMode() {
+    return (stageEl && stageEl.value) || "introduction";
+  }
+  function lastLab() {
+    window.EssayScaff = window.EssayScaff || {};
+    window.EssayScaff.lastLab = window.EssayScaff.lastLab || {};
+    return window.EssayScaff.lastLab;
+  }
+  function chainIds() {
+    // Current chain wins: in-memory chain (Stage-4 Continue) first, then
+    // live stage responses, then link fields. Strings and input elements
+    // both accepted; first non-empty value wins, else null (unlinked).
+    function val() {
+      for (var i = 0; i < arguments.length; i++) {
+        var v = arguments[i];
+        if (typeof v === "string" && v) return v;
+        if (v && v.value && v.value.trim()) return v.value.trim();
+      }
+      return null;
+    }
+    var ES = window.EssayScaff || {};
+    var lc = ES.labChain || {};
+    return {
+      stage1_session_id: val(lc.stage1_session_id, ES.lastStage1 && ES.lastStage1.session_id),
+      stage2_session_id: val(lc.stage2_session_id,
+        ES.lastStage2 && ES.lastStage2.session_id, document.getElementById("s3Stage2")),
+      stage3_session_id: val(lc.stage3_session_id, ES.lastStage3 && ES.lastStage3.session_id),
+      stage4_session_id: val(lc.stage4_session_id, ES.lastStage4 && ES.lastStage4.session_id),
+    };
+  }
+
   let timer = null;
   let lastRequestId = 0;
 
@@ -45,23 +85,31 @@
 
   async function runAnalysis() {
     timer = null;
-    const text = editor.value;
+    var mode = currentMode();
+    var text = editor.value;
+    drafts[mode] = text;
     if (!text || !text.trim()) {
       statusEl.textContent = "Type something to analyze.";
       return;
     }
     const myId = ++lastRequestId;
     statusEl.textContent = "Analyzing...";
-    // Phase 2: optional topic inputs (empty = topic pipeline skipped).
     const topicEl = document.getElementById("topic");
     const kwEl = document.getElementById("teacherKeywords");
     const topic = topicEl ? topicEl.value.trim() : "";
     const kws = kwEl ? kwEl.value.split(",").map(function (s) { return s.trim(); }).filter(Boolean) : [];
+    const chain = chainIds();
     try {
-      const res = await fetch("/api/analyze", {
+      const res = await fetch("/api/lab/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text, stage: stageEl.value, topic: topic || null, teacher_keywords: kws.length ? kws : null }),
+        body: JSON.stringify({ text: text, section: mode,
+          topic: topic || null, teacher_keywords: kws.length ? kws : null,
+          lab_session_id: labSessionId,
+          stage1_session_id: chain.stage1_session_id,
+          stage2_session_id: chain.stage2_session_id,
+          stage3_session_id: chain.stage3_session_id,
+          stage4_session_id: chain.stage4_session_id }),
       });
       const data = await readJson(res);
       if (myId !== lastRequestId) return; // superseded by newer request
@@ -72,17 +120,222 @@
         return;
       }
       statusEl.textContent = "Done (" + data.analysis_id + ").";
+      if (data.lab_session_id && data.lab_session_id !== labSessionId) {
+        labSessionId = data.lab_session_id;
+        try { sessionStorage.setItem("essayscaff.labSession", labSessionId); } catch (e) { /* private */ }
+      }
       window.EssayScaff = window.EssayScaff || {};
       window.EssayScaff.lastData = data; // Phase 1B: Transparency Mode reads this
       // Client-side count of lab analyses (previous-feedback counter only).
       window.EssayScaff.labAnalyses = (window.EssayScaff.labAnalyses || 0) + 1;
+      lastLab()[mode] = { readiness: data.lab_readiness || {},
+        revision_number: data.revision_number, analysis: data.analysis,
+        lab_rules: data.lab_rules || [], lab_session_id: data.lab_session_id };
       renderAll(data, text);
+      updateProgression();
     } catch (err) {
       if (myId !== lastRequestId) return;
       statusEl.textContent = "Request failed.";
       feedbackEl.innerHTML = "<p>Request failed: " + esc(err.message) + "</p>";
       if (window.EssayScaffHighlight) window.EssayScaffHighlight.clear();
     }
+  }
+
+  /* Section switching: stash the current draft, load the other section's
+   * draft (memory, else the server's latest saved revision, else empty).
+   * Bound here (loads before feedback_focus.js) so the draft is swapped
+   * before any follow-up analysis runs. */
+  var prevMode = currentMode();
+  if (stageEl) stageEl.addEventListener("change", function () {
+    drafts[prevMode] = editor.value;
+    var next = currentMode();
+    prevMode = next;
+    if (drafts[next]) {
+      editor.value = drafts[next];
+    } else {
+      editor.value = "";
+      if (labSessionId) fetchLatestDraft(next);
+    }
+    if (window.EssayScaffHighlight) window.EssayScaffHighlight.clear();
+  });
+
+  async function fetchLatestDraft(mode) {
+    if (!labSessionId) return;
+    try {
+      const res = await fetch("/api/lab/session/" + encodeURIComponent(labSessionId));
+      if (!res.ok) return;
+      const s = await readJson(res);
+      // GET /session carries the assembled essay map (section -> text).
+      var txt = s && s.essay ? s.essay[mode] : null;
+      if (txt && !editor.value.trim()
+          && currentMode() === mode && !drafts[mode]) {
+        drafts[mode] = txt;
+        editor.value = txt;
+        // The restored text was not typed: drop any debounce scheduled for
+        // older user input so a stale timer can never auto-analyze text the
+        // student did not just write (e.g. right after clearing the box).
+        if (timer) { clearTimeout(timer); timer = null; }
+        var FF = window.EssayScaffFeedback || null;
+        if (FF) FF.updateFeedbackFocus();
+      }
+    } catch (e) { /* drafts stay empty; never break the workspace */ }
+  }
+
+  /* Section progression gates (display only; readiness computed server-side).
+   * Buttons stay disabled until the previous section is READY. */
+  function sectionReady(mode) {
+    var entry = lastLab()[mode];
+    var map = { introduction: "READY FOR BODY", body: "READY FOR CONCLUSION",
+      conclusion: "READY FOR FINAL REVIEW" };
+    return !!entry && ((entry.readiness || {}).decision) === map[mode];
+  }
+  function updateProgression() {
+    function setBtn(id, enabled) {
+      var b = document.getElementById(id);
+      if (b) b.disabled = !enabled;
+    }
+    var introOk = sectionReady("introduction");
+    var bodyOk = sectionReady("body");
+    var concOk = sectionReady("conclusion");
+    setBtn("labToBody", introOk);
+    setBtn("labToConc", bodyOk);
+    setBtn("labToReview", concOk);
+    var line = document.getElementById("labGateLine");
+    if (line) {
+      var mode = currentMode();
+      if (!lastLab()[mode]) line.textContent = "";
+      else if (sectionReady(mode)) line.textContent = "READY TO CONTINUE";
+      else line.textContent = "REVISION NEEDED — see guidance above.";
+    }
+    if (window.EssayScaffFeedback) window.EssayScaffFeedback.updateFeedbackFocus();
+  }
+
+  function gotoSection(mode) {
+    if (stageEl) {
+      stageEl.value = mode;
+      stageEl.dispatchEvent(new window.Event("change", { bubbles: true }));
+    }
+    var tab = document.querySelector('#workspaceTabs [data-ws="studentSection"]');
+    if (tab) tab.click();
+    editor.focus();
+  }
+
+  /* Final Review: read-only assembled essay + process summary, loaded from
+   * stored revisions only. Never generates or rewrites student text. */
+  async function loadReview() {
+    var statusBox = document.getElementById("reviewStatus");
+    var essayBox = document.getElementById("reviewEssay");
+    var sumBox = document.getElementById("processSummary");
+    if (!labSessionId) {
+      if (statusBox) statusBox.innerHTML = "<p>Analyze all three essay sections first.</p>";
+      if (essayBox) essayBox.innerHTML = "<p>No saved essay sections yet.</p>";
+      if (sumBox) sumBox.innerHTML = "";
+      return;
+    }
+    if (statusBox) statusBox.innerHTML = "<p>Loading…</p>";
+    try {
+      const res = await fetch("/api/lab/session/" + encodeURIComponent(labSessionId) + "/summary");
+      if (!res.ok) {
+        if (statusBox) statusBox.innerHTML = "<p>Could not load the review.</p>";
+        return;
+      }
+      const s = await readJson(res);
+      renderReviewEssay(s);
+      renderSummary(s);
+    } catch (e) {
+      if (statusBox) statusBox.innerHTML = "<p>Request failed.</p>";
+    }
+  }
+
+  function renderReviewEssay(s) {
+    var essayBox = document.getElementById("reviewEssay");
+    var statusBox = document.getElementById("reviewStatus");
+    var essay = (s && s.student_essay) || {};
+    var final = (s && s.process_status && s.process_status.final_review) || {};
+    if (essayBox) {
+      essayBox.textContent = "";
+      [["INTRODUCTION", "introduction"], ["BODY", "body"], ["CONCLUSION", "conclusion"]].forEach(function (pair) {
+        var h = document.createElement("h3");
+        h.textContent = pair[0];
+        essayBox.appendChild(h);
+        var p = document.createElement("p");
+        // textContent only: student text stays literal, never markup.
+        p.textContent = essay[pair[1]] || "Not written yet.";
+        essayBox.appendChild(p);
+      });
+    }
+    if (statusBox) {
+      // Exact backend strings: structural state, never a quality grade.
+      statusBox.innerHTML = "<p><strong>" + esc(final.decision || "REVISION NEEDED") + "</strong></p>" +
+        "<p>" + esc(final.student_message || "") + "</p>";
+    }
+  }
+
+  function renderSummary(s) {
+    var sumBox = document.getElementById("processSummary");
+    if (!sumBox || !s) return;
+    function row(k, v) {
+      return "<div><span>" + esc(k) + "</span><strong>" + esc(v) + "</strong></div>";
+    }
+    var st = s.process_status || {};
+    var stages = st.stages || {};
+    var procRows = ["stage1", "stage2", "stage3", "stage4"].map(function (k) {
+      var g = stages[k] || {};
+      return "<div><span>" + esc(g.label || k) + "</span><strong>" +
+        esc(!g.linked ? "Not linked" : (g.decision || "—")) + "</strong></div>";
+    }).join("");
+    var labSecs = st.lab_sections || {};
+    procRows += ["introduction", "body", "conclusion"].map(function (k) {
+      var g = labSecs[k] || {};
+      var cap = k.charAt(0).toUpperCase() + k.slice(1);
+      return "<div><span>" + cap + "</span><strong>" +
+        esc(!g.revision_count ? "Not written" : (g.decision || "—")) + "</strong></div>";
+    }).join("");
+    var rev = s.revision_info || {};
+    var tm = s.time || {};
+    var fb = s.feedback || {};
+    var plan = s.planning_artifacts || {};
+    var outlineTxt = ((plan.outline || []).map(function (p, i) {
+      return "Point " + (i + 1) + ": " + (p.text || "") + " — " + (p.details || []).join("; ");
+    }).join("\n")) || "No outline linked.";
+    var timeline = (s.timeline || []).map(function (e) {
+      return (e.created_at || "?") + " — " + (e.kind || "?") + " R" +
+        (e.revision_number != null ? e.revision_number : "?") + " (" + (e.decision || "?") + ")";
+    }).join("\n");
+    sumBox.innerHTML =
+      "<h3>Writing Process Summary</h3>" +
+      "<h4>Assignment</h4><p>" + esc(((s.assignment || {}).topic) || "No topic linked.") + "</p>" +
+      "<p>" + esc((((s.assignment || {}).teacher_keywords) || []).join(", ") || "No keywords linked.") + "</p>" +
+      // Overall structural state, exact backend strings (never a grade).
+      "<h4>Overall status</h4><p><strong>" + esc((st.final_review || {}).decision || "REVISION NEEDED") + "</strong></p>" +
+      "<p>" + esc((st.final_review || {}).student_message || "") + "</p>" +
+      "<h4>Process status</h4>" + '<div class="dash-snap">' + procRows + "</div>" +
+      "<h4>Process snapshot</h4>" + '<div class="dash-snap">' +
+      row("Total active time", fmtDurShort(((tm.active_ms || {}).value) || 0)) +
+      row("Total revisions", rev.total_revisions != null ? rev.total_revisions : "—") +
+      row("Started", (tm.started_at || "").slice(0, 10) || "—") +
+      row("Last activity", (tm.latest_activity_at || "").slice(0, 10) || "—") +
+      "</div>" +
+      "<details><summary>Planning journey (read-only)</summary>" +
+      "<h4>Final idea</h4><p>" + esc(plan.idea || "Not linked.") + "</p>" +
+      "<h4>Final thesis</h4><p>" + esc(plan.thesis || "Not linked.") + "</p>" +
+      "<h4>Final outline</h4><pre>" + esc(outlineTxt) + "</pre>" +
+      "<h4>Final reflection</h4><p>" +
+      esc(plan.reflection ? (plan.reflection.decision || "") + " / " + (plan.reflection.scaffold || "") : "Not linked.") +
+      "</p></details>" +
+      "<details><summary>Feedback counts (stored records only)</summary><p>" +
+      "Lab feedback items: " + esc(fb.lab_feedback_items != null ? fb.lab_feedback_items : "unknown") + "<br/>" +
+      "Currently unresolved: " + esc(JSON.stringify(fb.current_unresolved_lab_rules || {})) +
+      "</p></details>" +
+      "<details><summary>Revision timeline</summary><pre>" +
+      esc(timeline || "No revisions yet.") + "</pre></details>";
+  }
+
+  function fmtDurShort(ms) {
+    var s = Math.max(0, Math.floor((ms || 0) / 1000));
+    var m = Math.floor(s / 60);
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    return pad(m) + ":" + pad(s % 60);
   }
 
   // Guarded write: a missing element logs instead of throwing, so one
@@ -189,6 +442,87 @@
   document.getElementById("analyzeBtn").addEventListener("click", runAnalysis);
   document.getElementById("sampleBtn").addEventListener("click", function () {
     editor.value = SAMPLE_TEXT;
+    drafts[currentMode()] = SAMPLE_TEXT;
     runAnalysis();
   });
+
+  /* Restore server-saved drafts + readiness after reload (read-only). Only
+   * fills sections with no in-memory state, so fresh typing is never lost. */
+  async function restoreLabFromServer() {
+    if (!labSessionId) return;
+    var mem = lastLab();
+    if (mem.introduction || mem.body || mem.conclusion) return;
+    try {
+      const res = await fetch("/api/lab/session/" + encodeURIComponent(labSessionId));
+      if (!res.ok) return;
+      const s = await readJson(res);
+      (s.revisions || []).forEach(function (r) {
+        if (!r || ["introduction", "body", "conclusion"].indexOf(r.section) === -1) return;
+        var prev = mem[r.section];
+        if (!prev || (r.revision_number || 0) > (prev.revision_number || 0)) {
+          mem[r.section] = { readiness: r.readiness || {},
+            revision_number: r.revision_number, analysis: null,
+            lab_session_id: labSessionId };
+        }
+        if (!drafts[r.section] && r.essay_text
+            && currentMode() === r.section && !editor.value.trim()) {
+          drafts[r.section] = r.essay_text;
+          editor.value = r.essay_text;
+          // Same stale-timer guard as fetchLatestDraft: restored text was
+          // not typed, so no pending auto-analysis may fire for it.
+          if (timer) { clearTimeout(timer); timer = null; }
+        }
+      });
+      updateProgression();
+    } catch (e) { /* restore is best-effort only */ }
+  }
+
+  document.querySelectorAll("#workspaceTabs .tab").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var ws = b.getAttribute("data-ws");
+      if (ws === "reviewSection") {
+        setTimeout(loadReview, 0);
+      } else if (ws === "studentSection") {
+        setTimeout(restoreLabFromServer, 0);
+      }
+    });
+  });
+  [["labToBody", "body"], ["labToConc", "conclusion"]].forEach(function (pair) {
+    var b = document.getElementById(pair[0]);
+    if (b) b.addEventListener("click", function () { gotoSection(pair[1]); });
+  });
+  var toReview = document.getElementById("labToReview");
+  if (toReview) toReview.addEventListener("click", function () {
+    var tab = document.querySelector('#workspaceTabs [data-ws="reviewSection"]');
+    if (tab) tab.click();
+  });
+  var sumBtn = document.getElementById("summaryBtn");
+  if (sumBtn) sumBtn.addEventListener("click", function () {
+    var el = document.getElementById("processSummary");
+    if (el) {
+      if (!el.textContent.trim() || el.textContent.indexOf("Analyze") !== -1) loadReview();
+      try { el.scrollIntoView({ block: "nearest" }); } catch (e) { /* jsdom */ }
+    }
+  });
+  var sumRefresh = document.getElementById("summaryRefreshBtn");
+  if (sumRefresh) sumRefresh.addEventListener("click", loadReview);
+
+  // Test seam + cross-module hook (Stage-4 Continue clears stale drafts).
+  window.EssayScaffLab = {
+    updateProgression: updateProgression,
+    loadReview: loadReview,
+    sectionReady: sectionReady,
+    drafts: drafts,
+    getSessionId: function () { return labSessionId; },
+    resetDrafts: function () {
+      drafts.introduction = ""; drafts.body = ""; drafts.conclusion = "";
+      labSessionId = null;
+      try { sessionStorage.removeItem("essayscaff.labSession"); } catch (e) { /* private */ }
+      var ES = window.EssayScaff || {};
+      ES.lastLab = {};
+      editor.value = "";
+      updateProgression();
+    },
+  };
+  updateProgression();
 })();

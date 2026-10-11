@@ -23,6 +23,7 @@ from flask import Blueprint, jsonify, request
 import config
 from services import analysis_service, db
 from services import grammar_service, source_view
+from services import lab as lab_service
 from services import learning_analytics
 from services import stage1 as stage1_service
 from services import stage2 as stage2_service
@@ -408,6 +409,65 @@ def stage4_reflect():
         return jsonify({"error": str(exc)}), status
     learning_analytics.log_stage_completion("stage4", result["session_id"], result)
     return jsonify(result), 200
+
+
+@api_bp.post("/api/lab/analyze")
+def lab_analyze():
+    """Analyze one Writing Lab section draft: unchanged NLP + experimental
+    LAB_* section rules, append-only essay revision, section readiness."""
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "")
+    section = data.get("section")
+    topic = data.get("topic")
+    teacher_keywords = data.get("teacher_keywords")
+    lab_session_id = data.get("lab_session_id")
+    stage1_session_id = data.get("stage1_session_id")
+    stage2_session_id = data.get("stage2_session_id")
+    stage3_session_id = data.get("stage3_session_id")
+    stage4_session_id = data.get("stage4_session_id")
+    if not isinstance(text, str):
+        return jsonify({"error": "Field 'text' must be a string."}), 400
+    err = _check_topic_keywords(topic, teacher_keywords)
+    if err is not None:
+        body, status = err
+        return jsonify(body), status
+    for sid_field, sid in (("lab_session_id", lab_session_id),
+                           ("stage1_session_id", stage1_session_id),
+                           ("stage2_session_id", stage2_session_id),
+                           ("stage3_session_id", stage3_session_id),
+                           ("stage4_session_id", stage4_session_id)):
+        if sid is not None and not isinstance(sid, str):
+            return jsonify({"error": f"Field '{sid_field}' must be a string."}), 400
+    try:
+        result = lab_service.analyze_section(
+            text, section, topic=topic, teacher_keywords=teacher_keywords,
+            lab_session_id=lab_session_id, stage1_session_id=stage1_session_id,
+            stage2_session_id=stage2_session_id, stage3_session_id=stage3_session_id,
+            stage4_session_id=stage4_session_id,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result), 200
+
+
+@api_bp.get("/api/lab/session/<session_id>")
+def lab_session(session_id: str):
+    """Writing Lab session: chain links, essay revisions, essay status."""
+    try:
+        session = lab_service.get_lab_essay(session_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(session), 200
+
+
+@api_bp.get("/api/lab/session/<session_id>/summary")
+def lab_summary(session_id: str):
+    """Writing Process Summary payload (read-only assembly)."""
+    try:
+        summary = lab_service.summarize_lab_session(session_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(summary), 200
 
 
 @api_bp.get("/api/stage4/session/<session_id>")

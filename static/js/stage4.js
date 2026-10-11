@@ -188,13 +188,29 @@
     // Current chain wins: overwrite stale lab/browser values outright.
     if (tEl && topic) tEl.value = topic;
     if (kEl && kws && kws.length) kEl.value = kws.join(", ");
+    // New chain, new drafts: only when a previous chain is recorded in this
+    // page AND differs, drop the old chain's lab state so stale text can
+    // never leak across chains. Otherwise keep the student's text: the
+    // server still mints a fresh lab session on any parent mismatch, so an
+    // unknown/stored session can never be silently reused.
+    var nextChain = chainSessions();
+    var prevChain = null;
+    try { prevChain = (window.EssayScaff && window.EssayScaff.labChain) || null; }
+    catch (e0) { prevChain = null; }
+    var changed = !!prevChain && ["stage1_session_id", "stage2_session_id",
+      "stage3_session_id", "stage4_session_id"].some(function (k) {
+        return (prevChain[k] || null) !== (nextChain[k] || null);
+      });
     try {
       if (topic) sessionStorage.setItem("essayscaff.labTopic", topic);
       if (kws && kws.length) sessionStorage.setItem("essayscaff.labKeywords", kws.join(", "));
-      sessionStorage.setItem("essayscaff.labChain", JSON.stringify(chainSessions()));
+      sessionStorage.setItem("essayscaff.labChain", JSON.stringify(nextChain));
       window.EssayScaff = window.EssayScaff || {};
-      window.EssayScaff.labChain = chainSessions();
+      window.EssayScaff.labChain = nextChain;
     } catch (e) { /* private mode */ }
+    if (changed && window.EssayScaffLab) {
+      try { window.EssayScaffLab.resetDrafts(); } catch (e2) { /* navigation first */ }
+    }
     if (window.EssayScaffFeedback) window.EssayScaffFeedback.refreshLabStarter();
   }
   window.EssayScaffStage4 = window.EssayScaffStage4 || {};

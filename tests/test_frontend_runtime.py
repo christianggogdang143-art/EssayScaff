@@ -34,6 +34,20 @@ B1 = {"text": "Extreme temperatures reduce crop production.",
       "details": ["High heat can interfere with crop growth."]}
 B2 = {"text": "Irregular rainfall disrupts farming schedules.",
       "details": ["Unpredictable rainfall can affect planting timing."]}
+LAB_INTRO = ("Climate change affects crop production because extreme temperatures and irregular "
+             "rainfall create difficulties for farmers. Crop farmers need stable temperature "
+             "and rainfall for agriculture.")
+LAB_BODY = ("Extreme temperatures reduce crop production because high heat damages growing "
+            "plants during critical weeks. Farmers face irregular rainfall that disrupts "
+            "planting schedules and lowers harvests across affected farming regions. "
+            "Dry spells stress young crops further.")
+LAB_CONC = ("Climate change threatens farming, so farmers must adapt planting to shifting "
+            "rainfall and heat while protecting future crop yields.")
+# Exact bug-report reproduction inputs (blocked Stage 1: short idea).
+BLOCKED_TOPIC = "Effects of social media use on students' academic performance"
+BLOCKED_KWS = ["social media", "students", "academic performance",
+               "distraction", "concentration", "study habits", "schoolwork"]
+BLOCKED_IDEA = "Social media affects students."
 
 
 def _harness_dir() -> Path:
@@ -89,8 +103,43 @@ def verdict(tmp_path_factory):
         payloads["stage4"] = s4
         payloads["stage4session"] = client.get(
             f"/api/stage4/session/{s4['session_id']}").get_json()
+        lab_chain = {"stage1_session_id": s1["session_id"],
+                     "stage2_session_id": s2["session_id"],
+                     "stage3_session_id": s3["session_id"],
+                     "topic": TOPIC, "teacher_keywords": KWS}
+        li = client.post("/api/lab/analyze", json={
+            "text": LAB_INTRO, "section": "introduction", **lab_chain}).get_json()
+        assert li["lab_readiness"]["decision"] == "READY FOR BODY"
+        payloads["labintro"] = li
+        lb = client.post("/api/lab/analyze", json={
+            "text": LAB_BODY, "section": "body",
+            "lab_session_id": li["lab_session_id"], **lab_chain}).get_json()
+        assert lb["lab_readiness"]["decision"] == "READY FOR CONCLUSION"
+        payloads["labbody"] = lb
+        lc = client.post("/api/lab/analyze", json={
+            "text": LAB_CONC, "section": "conclusion",
+            "lab_session_id": li["lab_session_id"], **lab_chain}).get_json()
+        assert lc["lab_readiness"]["decision"] == "READY FOR FINAL REVIEW"
+        payloads["labconc"] = lc
+        payloads["labsession"] = client.get(
+            f"/api/lab/session/{li['lab_session_id']}").get_json()
+        payloads["labsummary"] = client.get(
+            f"/api/lab/session/{li['lab_session_id']}/summary").get_json()
         payloads["live"] = client.post("/api/analyze", json={
             "text": IDEA, "topic": TOPIC, "teacher_keywords": KWS}).get_json()
+        # Genuine blocked Stage-1 response for the badge-provenance flows.
+        # Backend premise asserted here: the gate really blocks on
+        # PREWRITE_001 and the visible guidance carries its rule_id.
+        blocked = client.post("/api/stage1/analyze", json={
+            "text": BLOCKED_IDEA, "topic": BLOCKED_TOPIC,
+            "teacher_keywords": BLOCKED_KWS}).get_json()
+        assert blocked["readiness"]["decision"] == "DEVELOPING"
+        assert blocked["readiness"]["stage2_allowed"] is False
+        assert "PREWRITE_001" in blocked["readiness"]["blocking_rules"]
+        bmain = (blocked.get("guidance") or {}).get("main") or {}
+        assert bmain.get("rule_id") == "PREWRITE_001", bmain
+        assert (bmain.get("question") or {}).get("prompt_id") != "PREWRITE_001"
+        payloads["stage1blocked"] = blocked
         paydir = tmp_path / "payloads"
         paydir.mkdir()
         for name, body in payloads.items():
@@ -204,6 +253,30 @@ def test_runtime_lab_single_primary_card(verdict):
     _flow(verdict, "lab_single_primary_card")
 
 
+def test_runtime_lab_section_intro_ready(verdict):
+    _flow(verdict, "lab_section_intro_ready")
+
+
+def test_runtime_lab_section_drafts_isolated(verdict):
+    _flow(verdict, "lab_section_drafts_isolated")
+
+
+def test_runtime_lab_section_body_ready(verdict):
+    _flow(verdict, "lab_section_body_ready")
+
+
+def test_runtime_lab_section_conclusion_ready(verdict):
+    _flow(verdict, "lab_section_conclusion_ready")
+
+
+def test_runtime_lab_review_essay_and_summary(verdict):
+    _flow(verdict, "lab_review_essay_and_summary")
+
+
+def test_runtime_lab_progression_gates_closed(verdict):
+    _flow(verdict, "lab_progression_gates_closed")
+
+
 def test_runtime_hl_spans_match_offsets(verdict):
     _flow(verdict, "hl_spans_match_offsets")
 
@@ -266,6 +339,22 @@ def test_runtime_dash_blocking_badges(verdict):
 
 def test_runtime_dash_blocking_unit(verdict):
     _flow(verdict, "dash_blocking_unit")
+
+
+def test_runtime_badge_stage1_blocking_guidance(verdict):
+    _flow(verdict, "badge_stage1_blocking_guidance")
+
+
+def test_runtime_badge_next_step_states(verdict):
+    _flow(verdict, "badge_next_step_states")
+
+
+def test_runtime_badge_cross_stage_slots(verdict):
+    _flow(verdict, "badge_cross_stage_slots")
+
+
+def test_runtime_badge_starter_silent(verdict):
+    _flow(verdict, "badge_starter_silent")
 
 
 def test_runtime_transparency_keeps_all_findings(verdict):

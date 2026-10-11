@@ -104,10 +104,14 @@
       window.EssayScaffFeedback.renderOne("guidedPrompts", cards, "<p>No questions right now.</p>");
       window.EssayScaffFeedback.setWhy("guidedPrompts", primaryWhy(d));
       // Blocking-vs-advisory marker (display only; readiness untouched).
+      // Provenance follows the VISIBLE card: guidance.main, else the first
+      // other guidance, else the first scaffold prompt — always the backend
+      // source rule_id, never the prompt/template id.
       var g1 = d.guidance || {};
-      var firstRule = (g1.main || (g1.others || [])[0]) ? null
-        : (((d.prompts || {}).prompts || [])[0] || {}).rule_id || null;
-      window.EssayScaffFeedback.markBlocking("guidedPrompts", firstRule, d.readiness, "stage2_allowed");
+      var vis1 = g1.main || ((g1.others || [])[0]) || null;
+      if (!vis1) vis1 = (((d.prompts || {}).prompts || [])[0]) || null;
+      window.EssayScaffFeedback.markBlocking("guidedPrompts",
+        (vis1 && vis1.rule_id) || null, d.readiness, "stage2_allowed");
       window.EssayScaffFeedback.updateFeedbackFocus();
     } else {
       $("guidedPrompts").innerHTML = cards.join("") || "<p>No questions right now.</p>";

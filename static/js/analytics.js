@@ -64,7 +64,7 @@
   var SECTION_STAGE = {
     stage1Section: "stage1", stage2Section: "stage2",
     stage3Section: "stage3", stage4Section: "stage4",
-    studentSection: "lab"
+    studentSection: "lab", reviewSection: "lab"
   };
 
   function currentTabStage() {

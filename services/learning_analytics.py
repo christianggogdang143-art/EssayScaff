@@ -38,6 +38,9 @@ EVENT_TYPES = frozenset({
     "SESSION_PAUSED",
     "SESSION_RESUMED",
     "SESSION_ENDED",
+    "LAB_SECTION_READY",
+    "ESSAY_READY_FOR_REVIEW",
+    "PROCESS_SUMMARY_VIEWED",
 })
 
 # Application/session-level lifecycle events that legitimately occur before

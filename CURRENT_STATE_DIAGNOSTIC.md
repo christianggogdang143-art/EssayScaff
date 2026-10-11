@@ -1,5 +1,9 @@
 # EssayScaff — Current-State Diagnostic (2026-10-11)
 
+> The audit below is preserved as written. It describes the state **before**
+> the Writing Lab implementation. A dated addendum (§10) records what has
+> changed since. Old bug reports are history, not retractions.
+
 Read-only audit; no behavior was changed to produce this document.
 Baseline: `pytest` **400 passed**; VR-2 rules `8ac38bf3…`, config `401f3a4b…`, problems `[]`.
 Repo state: `master` branch, **zero commits** (no git history — deletions are unrecoverable except via backups).
@@ -107,3 +111,70 @@ Repo state: `master` branch, **zero commits** (no git history — deletions are 
   JSON envelope — cosmetic); validation API unauthenticated (local-research-tool assumption, documented).
 
 ## 9. Debt & unfinished work (ranked in final report §14–15/§21)
+
+## 10. Addendum — Writing Lab implementation (2026-10-11, verified, uncommitted at time of writing)
+
+Baseline at addendum time: `pytest` **430 passed**; frontend harness
+**68/68**; `node --check` clean on all production JS; VR-2
+`verify_vr2_freeze()` clean (`rules_match: True`, `config_match: True`,
+problems `[]`). Branch `main` now has history (`8808f69` + this work).
+
+### 10.1 Resolved since the audit above
+
+- **§4 (Writing Lab scope):** superseded. Section selection now drives
+  section-specific LAB_* detectors (`services/lab_rules.py`), section
+  gates, a canonical essay record (`writing_lab_sessions` +
+  `essay_revisions`), per-section READY states, a Final Review assembly,
+  and a Writing Process Summary with an Overall Status block. Details in
+  `CURRENT_ARCHITECTURE.md` §8.
+- **§6 (highlight offset risks):** fixed. `static/js/highlight.js` maps
+  backend code-point offsets to UTF-16 units, so emoji/astral-plane
+  characters can never drift later marks; two-way mark↔card navigation;
+  typing/stage-change clears stale marks; render refused on text
+  mismatch. Covered by `hl_*` harness flows and confirmed in live Chrome
+  (mark→card, card→mark, typing clears, emoji analysis clean).
+- **§7 (analytics overlap):** fixed. Aggregates merge overlapping
+  intervals (`_union_active_ms`, overlap-adjusted); identical replays
+  still deduped. `processing_ms` is never used as writing time
+  (snapshot shows analytics active time or "—").
+- **Validation API:** researcher routes accept an optional
+  `X-Research-Token` for non-localhost deployments (401 when configured
+  and absent); student/analysis routes never gated. Formal state
+  unchanged and honestly reported: **2 DRAFT datasets, 0 samples,
+  0 runs** (read directly from `essayscaff.db`, 2026-10-11).
+- **Migration safety:** interaction-events migration copies the legacy
+  table to `interaction_events_backup` and restores (not rebuilds) on
+  failure. LanguageTool singleton init is lock-guarded.
+- **Two bugs found and fixed during verification** (both covered by
+  harness flows and confirmed in live Chrome on 2026-10-11, 78/78 E2E
+  checkpoints on a fresh part-time-work chain):
+  1. A pending debounce could auto-analyze server-restored draft text
+     right after the student cleared the box, clobbering starter
+     guidance. Server fills now cancel pending debounce timers;
+     restored drafts never auto-analyze.
+  2. The Process Summary omitted the overall status. It now renders an
+     Overall Status block with the exact backend decision +
+     student message.
+
+### 10.2 Still true (unchanged limits)
+
+- No generative LLM; student is sole author of every essay word —
+  assembly uses only latest stored section revisions, nothing from
+  planning artifacts, no transitions generated.
+- LAB_* rules are experimental and outside VR-2; all thresholds are
+  development values (`DATA_MODE_DEFAULT = "development"`); no accuracy,
+  grade, coherence, clarity, or factual-correctness claims anywhere.
+- `READY FOR INDEPENDENT REVIEW` means only: three sections exist, each
+  meets its blocking conditions, no active blocking lab condition
+  remains. Never excellent/accurate/persuasive/teacher-approved.
+- Stage 1–4 detectors, readiness, and VR-2 pins untouched by lab work.
+
+### 10.3 Debt carried forward
+
+- LAB_* thresholds await formal empirical validation (human-dependent,
+  not started).
+- No consent workflow in the software; approvals for real student data
+  stay the researcher's responsibility (unchanged).
+- jsdom harness is not a layout/paint engine (documented in
+  `tests/frontend_smoke/smoke.js`); live-browser verification remains
+  the complement, recorded in the release report.

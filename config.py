@@ -47,7 +47,6 @@ LANGUAGETOOL_JAR_DIR = None
 
 # SQLite database file (relative to project root).
 DATABASE_PATH = "essayscaff.db"
-
 # Application version, recorded with each analysis for reproducibility.
 # Phase 1A runs predate versioning and honestly report "not recorded".
 APP_VERSION = "1.1.0"
@@ -280,3 +279,28 @@ THESIS_MIN_SUPPORT_MATCHES = 2
 # similarity >= STRONG -> STRONG
 TOPIC_MODERATE_THRESHOLD = 0.30
 TOPIC_STRONG_THRESHOLD = 0.60
+
+# ============================================================
+# WRITING LAB experimental section rules (development parameters).
+# *** EXPERIMENTAL / NOT FORMALLY VALIDATED / NOT PART OF VR-2 ***
+# These names are deliberately ABSENT from
+# services/validation/snapshot.py FROZEN_THRESHOLDS, so the VR-2
+# classifier snapshot hash can never change because of them. They live
+# here (centralized, documented) instead of scattered through code.
+# Surface/lexical/structural evidence only — never persuasiveness,
+# credibility, factual correctness, or any quality grade.
+# ============================================================
+# Minimum alphabetic tokens for a section draft to count as developed.
+LAB_INTRO_MIN_TOKENS = 20
+LAB_BODY_MIN_TOKENS = 30
+LAB_CONC_MIN_TOKENS = 15
+# Keyword-overlap-coefficient bands for thesis/outline lexical connection
+# (shared / min(len(section_kw), len(reference_kw))).
+LAB_BODY_ALIGN_LOW = 0.25
+LAB_BODY_ALIGN_HIGH = 0.50
+# Conclusion novelty heuristic: all-concepts-novel triggers only with at
+# least this many conclusion concepts (advisory, never blocking).
+LAB_CONC_NOVEL_MIN_CONCEPTS = 3
+# Default data-mode label for newly written rows (see services/db.py).
+# Override per environment with ESSAYSCAFF_DATA_MODE=development|demo|pilot.
+DATA_MODE_DEFAULT = "development"

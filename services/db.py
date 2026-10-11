@@ -99,7 +99,25 @@ def _jval(d: dict, key: str, default):
 
 
 def db_path() -> Path:
+    """SQLite file location. ESSAYSCAFF_DB_PATH overrides the default so
+    development / pilot / formal-research databases can run side by side
+    without copying files. Unset = historical default (unchanged boot)."""
+    import os
+
+    override = os.environ.get("ESSAYSCAFF_DB_PATH", "")
+    if override.strip():
+        return Path(override)
     return Path(__file__).resolve().parent.parent / config.DATABASE_PATH
+
+
+def current_data_mode() -> str:
+    """Data-mode label for newly written rows (development/demo/pilot).
+    Legacy rows predate labels and read back as None. Formal validation
+    tables are never labeled from here and never ingest lab data."""
+    import os
+
+    mode = os.environ.get("ESSAYSCAFF_DATA_MODE", "") or config.DATA_MODE_DEFAULT
+    return mode.strip() or config.DATA_MODE_DEFAULT
 
 
 STAGE1_SCHEMA = """
@@ -400,12 +418,47 @@ CREATE TABLE IF NOT EXISTS stage_time_intervals (
 """
 
 
+LAB_SESSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS writing_lab_sessions (
+    id TEXT PRIMARY KEY,
+    stage1_session_id TEXT,
+    stage2_session_id TEXT,
+    stage3_session_id TEXT,
+    stage4_session_id TEXT,
+    topic TEXT,
+    teacher_keywords_json TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    data_mode TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+
+ESSAY_REVISION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS essay_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lab_session_id TEXT NOT NULL,
+    section TEXT NOT NULL,
+    revision_number INTEGER NOT NULL,
+    essay_text TEXT NOT NULL,
+    analysis_id TEXT,
+    readiness_json TEXT NOT NULL,
+    fired_rules_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(lab_session_id, section, revision_number)
+);
+"""
+
+
 _TABLE_SCHEMAS = {
     "analysis_runs": SCHEMA,
     "stage1_revisions": STAGE1_SCHEMA,
     "stage2_revisions": STAGE2_SCHEMA,
     "stage3_revisions": STAGE3_SCHEMA,
     "stage4_revisions": STAGE4_SCHEMA,
+    "writing_lab_sessions": LAB_SESSION_SCHEMA,
+    "essay_revisions": ESSAY_REVISION_SCHEMA,
     "validation_datasets": VALIDATION_DATASETS_SCHEMA,
     "validation_samples": VALIDATION_SAMPLES_SCHEMA,
     "validation_annotations": VALIDATION_ANNOTATIONS_SCHEMA,
@@ -502,6 +555,8 @@ def init_db() -> None:
         conn.execute(VALIDATION_ERROR_NOTES_SCHEMA)
         conn.execute(INTERACTION_EVENTS_SCHEMA)
         conn.execute(STAGE_TIME_INTERVALS_SCHEMA)
+        conn.execute(LAB_SESSION_SCHEMA)
+        conn.execute(ESSAY_REVISION_SCHEMA)
         conn.commit()
     finally:
         conn.close()
@@ -1144,3 +1199,160 @@ def get_stage1_session(session_id: str) -> dict:
         return {"session_id": session_id, "revision_count": len(revisions), "revisions": revisions}
     finally:
         conn.close()
+
+
+# ------------------------------------------------ Writing Lab sessions
+def create_lab_session(record: dict) -> dict:
+    """Insert one writing-lab session. Append-only registry (no UPDATE path
+    for chain links — a changed chain mints a new session instead)."""
+    init_db()
+    conn = sqlite3.connect(db_path())
+    try:
+        conn.execute(
+            "INSERT INTO writing_lab_sessions "
+            "(id, stage1_session_id, stage2_session_id, stage3_session_id, "
+            "stage4_session_id, topic, teacher_keywords_json, status, "
+            "data_mode, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                record["id"],
+                record.get("stage1_session_id"), record.get("stage2_session_id"),
+                record.get("stage3_session_id"), record.get("stage4_session_id"),
+                record.get("topic"), json.dumps(record.get("teacher_keywords")),
+                record.get("status", "active"), record.get("data_mode"),
+                record["created_at"], record["created_at"],
+            ),
+        )
+        conn.commit()
+        return get_lab_session(record["id"])
+    finally:
+        conn.close()
+
+
+def touch_lab_session(session_id: str, updated_at: str) -> None:
+    """Bump updated_at only. Chain links, topic, and history are immutable."""
+    init_db()
+    conn = sqlite3.connect(db_path())
+    try:
+        conn.execute("UPDATE writing_lab_sessions SET updated_at = ? WHERE id = ?",
+                     (updated_at, session_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_lab_session(session_id: str) -> dict:
+    """Lab session row + essay revision history, oldest first (read-only)."""
+    init_db()
+    conn = sqlite3.connect(db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT * FROM writing_lab_sessions WHERE id = ?",
+                           (session_id,)).fetchone()
+        if row is None:
+            return {"lab_session_id": session_id, "revision_count": 0, "revisions": []}
+        r = _row_dict(row)
+        revs = conn.execute(
+            "SELECT * FROM essay_revisions WHERE lab_session_id = ? "
+            "ORDER BY created_at ASC, id ASC", (session_id,)).fetchall()
+        revisions = []
+        for rr in revs:
+            d = _row_dict(rr)
+            revisions.append({
+                "lab_session_id": d.get("lab_session_id"), "section": d.get("section"),
+                "revision_number": d.get("revision_number"), "essay_text": d.get("essay_text"),
+                "analysis_id": d.get("analysis_id"),
+                "readiness": _jval(d, "readiness_json", {}),
+                "fired_rules": _jval(d, "fired_rules_json", []),
+                "created_at": d.get("created_at"),
+            })
+        return {
+            "lab_session_id": r.get("id"),
+            "stage1_session_id": r.get("stage1_session_id"),
+            "stage2_session_id": r.get("stage2_session_id"),
+            "stage3_session_id": r.get("stage3_session_id"),
+            "stage4_session_id": r.get("stage4_session_id"),
+            "topic": r.get("topic"),
+            "teacher_keywords": _jval(r, "teacher_keywords_json", None),
+            "status": r.get("status"),
+            "data_mode": r.get("data_mode"),
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+            "revision_count": len(revisions),
+            "revisions": revisions,
+        }
+    finally:
+        conn.close()
+
+
+def next_essay_revision(lab_session_id: str, section: str) -> int:
+    """Next revision number for one lab session + section (1-based)."""
+    init_db()
+    conn = sqlite3.connect(db_path())
+    try:
+        cur = conn.execute(
+            "SELECT COALESCE(MAX(revision_number), 0) FROM essay_revisions "
+            "WHERE lab_session_id = ? AND section = ?",
+            (lab_session_id, section),
+        )
+        return int(cur.fetchone()[0]) + 1
+    finally:
+        conn.close()
+
+
+def latest_essay_revision(lab_session_id: str, section: str) -> dict | None:
+    """Latest stored revision for one section, or None (never invented)."""
+    init_db()
+    conn = sqlite3.connect(db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT * FROM essay_revisions WHERE lab_session_id = ? AND section = ? "
+            "ORDER BY revision_number DESC LIMIT 1",
+            (lab_session_id, section)).fetchone()
+        if row is None:
+            return None
+        d = _row_dict(row)
+        return {
+            "lab_session_id": d.get("lab_session_id"), "section": d.get("section"),
+            "revision_number": d.get("revision_number"), "essay_text": d.get("essay_text"),
+            "analysis_id": d.get("analysis_id"),
+            "readiness": _jval(d, "readiness_json", {}),
+            "fired_rules": _jval(d, "fired_rules_json", []),
+            "created_at": d.get("created_at"),
+        }
+    finally:
+        conn.close()
+
+
+def save_essay_revision(record: dict) -> int:
+    """Append one essay revision. UNIQUE(lab, section, revision) plus
+    MAX()+1 numbering means earlier revisions can never be overwritten.
+    Returns the persisted revision number (re-read on collision retry)."""
+    init_db()
+    for attempt in range(REVISION_INSERT_RETRIES):
+        conn = sqlite3.connect(db_path())
+        try:
+            conn.execute(
+                "INSERT INTO essay_revisions "
+                "(lab_session_id, section, revision_number, essay_text, "
+                "analysis_id, readiness_json, fired_rules_json, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    record["lab_session_id"], record["section"],
+                    record["revision_number"], record["essay_text"],
+                    record.get("analysis_id"), json.dumps(record.get("readiness", {})),
+                    json.dumps(record.get("fired_rules", [])),
+                    record["created_at"],
+                ),
+            )
+            conn.commit()
+            return record["revision_number"]
+        except Exception as exc:
+            if not _is_revision_collision(exc) or attempt + 1 >= REVISION_INSERT_RETRIES:
+                raise
+            record["revision_number"] = next_essay_revision(
+                record["lab_session_id"], record["section"])
+        finally:
+            conn.close()
+    raise AssertionError("unreachable")  # pragma: no cover - loop always returns or raises
