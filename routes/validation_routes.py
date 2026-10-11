@@ -25,6 +25,29 @@ validation_bp = Blueprint("validation", __name__)
 
 CSV_MAX_CHARS = 500_000
 
+# Optional researcher token for deployments beyond localhost. When the
+# ESSAYSCAFF_API_TOKEN environment variable is set, every validation
+# endpoint requires it as an X-Research-Token header (constant-time
+# compare); otherwise the workspace stays open for local research use.
+# Student/analysis routes are never gated by this token.
+RESEARCH_TOKEN_HEADER = "X-Research-Token"
+
+
+def _research_token_ok() -> bool:
+    import hmac
+    import os
+
+    expected = os.environ.get("ESSAYSCAFF_API_TOKEN", "")
+    if not expected:
+        return True
+    return hmac.compare_digest(request.headers.get(RESEARCH_TOKEN_HEADER, ""), expected)
+
+
+@validation_bp.before_request
+def _gate_research_api():
+    if not _research_token_ok():
+        return jsonify({"error": "Research API token required (X-Research-Token)."}), 401
+
 
 def _err(exc: datasets_mod.ValidationError):
     msg = str(exc)

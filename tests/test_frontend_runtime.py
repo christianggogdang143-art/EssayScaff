@@ -260,6 +260,14 @@ def test_runtime_dash_one_primary_visible(verdict):
     _flow(verdict, "dash_one_primary_visible")
 
 
+def test_runtime_dash_blocking_badges(verdict):
+    _flow(verdict, "dash_blocking_badges")
+
+
+def test_runtime_dash_blocking_unit(verdict):
+    _flow(verdict, "dash_blocking_unit")
+
+
 def test_runtime_transparency_keeps_all_findings(verdict):
     _flow(verdict, "transparency_keeps_all_findings")
 

@@ -91,6 +91,32 @@ def test_unknown_detector_rejected(client):
     assert res.status_code == 400
 
 
+def test_research_token_gates_validation_api_when_configured(client, monkeypatch):
+    monkeypatch.setenv("ESSAYSCAFF_API_TOKEN", "test-token-123")
+    try:
+        assert client.get("/api/validation/datasets").status_code == 401
+        assert client.post("/api/validation/datasets", json={}).status_code == 401
+        assert client.get("/api/validation/freeze-record").status_code == 401
+        ok = client.get("/api/validation/datasets",
+                        headers={"X-Research-Token": "test-token-123"})
+        assert ok.status_code == 200
+        bad = client.get("/api/validation/datasets",
+                         headers={"X-Research-Token": "wrong"})
+        assert bad.status_code == 401
+    finally:
+        monkeypatch.delenv("ESSAYSCAFF_API_TOKEN", raising=False)
+
+
+def test_student_api_ignores_research_token(client, monkeypatch):
+    monkeypatch.setenv("ESSAYSCAFF_API_TOKEN", "test-token-123")
+    try:
+        assert client.get("/api/health").status_code == 200
+        res = client.post("/api/analyze", json={"text": "Climate change affects crops."})
+        assert res.status_code == 200
+    finally:
+        monkeypatch.delenv("ESSAYSCAFF_API_TOKEN", raising=False)
+
+
 def test_freeze_record_endpoint_shows_vr2_frozen(client):
     res = client.get("/api/validation/freeze-record")
     body = res.get_json()

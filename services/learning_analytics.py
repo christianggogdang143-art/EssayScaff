@@ -336,6 +336,44 @@ def _na(reason: str) -> dict:
     return {"value": None, "status": "N/A", "reason": reason}
 
 
+def _union_active_ms(intervals: list[dict]) -> tuple[int, int]:
+    """Merge overlapping wall-clock bounds so retried/overlapping client
+    intervals can never double-count active time.
+
+    Returns (merged_active_ms, overlap_adjusted_ms). Within each merged
+    wall-clock span the contribution is min(sum(active_ms), span_ms):
+    active time inside a span cannot exceed the span itself. Rows with
+    unparseable bounds are ignored (never invented). Non-overlapping
+    input yields exactly the naive sum with adjustment 0.
+    """
+    spans = []
+    for i in intervals or []:
+        try:
+            s = _parse_ts(i.get("started_at"), "started_at")
+            e = _parse_ts(i.get("ended_at"), "ended_at")
+        except ValueError:
+            continue
+        if e < s:
+            continue
+        spans.append([s, e, int(i.get("active_ms", 0) or 0)])
+    spans.sort(key=lambda t: (t[0], t[1]))
+    groups: list[list] = []
+    for s, e, a in spans:
+        if groups and s <= groups[-1][1]:
+            if e > groups[-1][1]:
+                groups[-1][1] = e
+            groups[-1][2] += a
+        else:
+            groups.append([s, e, a])
+    merged = adjusted = 0
+    for s, e, a in groups:
+        wall = int((e - s).total_seconds() * 1000)
+        give = min(a, max(wall, 0))
+        merged += give
+        adjusted += a - give
+    return merged, adjusted
+
+
 def aggregate(chain: dict) -> dict:
     """Deterministic aggregates over resolved sessions. Read-only.
 
@@ -426,16 +464,18 @@ def aggregate(chain: dict) -> dict:
                 earlier.update(p["fired_rules"])
             resolved = sorted(earlier - latest)
 
-        # Active time from closed intervals (client-measured, server-summed).
+        # Active time from closed intervals (client-measured, server-summed
+        # with overlap merging so retries can never double-count).
         intervals: list[dict] = []
         for sid in sids:
             intervals.extend(db.get_session_intervals(sid))
-        active_ms = sum(int(i.get("active_ms", 0) or 0) for i in intervals)
+        active_ms, overlap_adjusted_ms = _union_active_ms(intervals)
         starts = [i.get("started_at") for i in intervals if i.get("started_at")]
         ends = [i.get("ended_at") for i in intervals if i.get("ended_at")]
         if intervals:
             time_block = {
                 "active_ms": {"value": active_ms, "status": "OK", "reason": None},
+                "overlap_adjusted_ms": overlap_adjusted_ms,
                 "interval_count": len(intervals),
                 "session_count": len(sids),
                 "average_interval_ms": (

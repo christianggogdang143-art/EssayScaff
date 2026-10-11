@@ -9,6 +9,7 @@ Never auto-applies corrections.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -16,6 +17,9 @@ import config
 
 _tool = None
 _tool_error: str | None = None
+# Serializes lazy initialization so concurrent first uses (prewarm thread
+# vs first analysis) can start at most one Java process.
+_init_lock = threading.Lock()
 # Lifecycle instrumentation (all measured, never fabricated):
 # init = one-time local server boot; check = per-analysis work.
 _init_ms: float | None = None
@@ -47,12 +51,17 @@ def _get_tool():
     """Return the SHARED LanguageTool instance (one Java process per app).
 
     Initialized lazily on first analysis (or by prewarm at startup), then
-    reused for all later requests. Never one process per request.
+    reused for all later requests. Never one process per request. A lock
+    serializes concurrent first-use initializations (prewarm thread vs
+    first analysis) so only one Java process can ever start.
     """
     global _tool, _tool_error, _init_ms, _init_at
     if _tool is not None:
         return _tool
-    from datetime import datetime, timezone
+    with _init_lock:
+        if _tool is not None:
+            return _tool
+        from datetime import datetime, timezone
 
     t0 = time.perf_counter()
     try:

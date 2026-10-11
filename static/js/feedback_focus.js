@@ -322,6 +322,27 @@
     box.hidden = false;
   }
 
+  /* Blocking-vs-advisory marker for the single primary card.
+   * Display only: readiness (including blocking_rules) is read, never
+   * altered. "Blocking" = this card's rule is in the readiness blocking
+   * set; "Advisory" = the stage gate is open so this is optional polish;
+   * otherwise nothing is shown rather than risk misleading the student. */
+  function markBlocking(containerId, ruleId, readiness, allowedFlag) {
+    var el = $(containerId);
+    if (!el || !readiness) return;
+    var blocking = readiness.blocking_rules || readiness.blocking || [];
+    var badge = "";
+    if (ruleId && blocking.indexOf(ruleId) !== -1) {
+      badge = '<span class="badge badge-block" title="This issue blocks continuing. Resolve it to move on.">Blocking</span>';
+    } else if (readiness[allowedFlag] === true) {
+      badge = '<span class="badge badge-open" title="Optional improvement — you may continue.">Advisory</span>';
+    } else {
+      return;
+    }
+    var card = el.querySelector(".prompt, .fb");
+    if (card) card.insertAdjacentHTML("afterbegin", badge + " ");
+  }
+
   function stageRevision(ws) {
     try {
       var ES = window.EssayScaff || {};
@@ -580,6 +601,7 @@
     starterCard: starterCard,
     nextStepCard: nextStepCard,
     setWhy: setWhy,
+    markBlocking: markBlocking,
     goalText: function (ws) {
       if (ws === "studentSection") return null;
       return GOALS[ws] || null;

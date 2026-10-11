@@ -654,6 +654,13 @@ async function flow(name, fn) {
       null,
     ]);
     if (out.length !== 1 || out[0].fb !== "A") throw new Error("bad filtering: " + JSON.stringify(out));
+    // Astral-plane safety: backend offsets count code points, JS counts
+    // UTF-16 units — "😀" is 1 code point but 2 units; later spans must not drift.
+    const emo = HL.spansFor("A😀BC", [{ feedback_id: "E", start: 1, end: 3 }]);
+    if (emo.length !== 1) throw new Error("emoji span dropped");
+    if ("A😀BC".slice(emo[0].start, emo[0].end) !== "😀B") {
+      throw new Error("emoji drift: [" + emo[0].start + "," + emo[0].end + "]");
+    }
     return "invalid spans skipped, nothing invented";
   });
 
@@ -871,6 +878,56 @@ async function flow(name, fn) {
     if (vis.join(",") !== "feedback") throw new Error("active slots wrong: " + vis);
     if (promptCards("feedback").length !== 1) throw new Error("primary cards != 1");
     return "exactly one primary card";
+  });
+
+  await flow("dash_blocking_badges", async () => {
+    // Fixture chains reach READY at Stages 1-2, so primary cards there must
+    // carry the honest Advisory marker (never a Blocking one, no rule IDs).
+    [["stage1Section", "guidedPrompts"], ["stage2Section", "thesisPrompts"]].forEach(([ws, slot]) => {
+      clickWs(ws);
+    });
+    await settle();
+    ["guidedPrompts", "thesisPrompts"].forEach((slot) => {
+      const card = window.document.querySelector("#" + slot + " .prompt");
+      if (!card) throw new Error("no primary card in " + slot);
+      const b = card.querySelector(".badge-open");
+      if (!b || b.textContent.indexOf("Advisory") < 0) {
+        throw new Error("Advisory marker missing in " + slot);
+      }
+      if (card.querySelector(".badge-block")) throw new Error("false Blocking marker in " + slot);
+      if (/[A-Z]+_\d{3}/.test(b.textContent)) throw new Error("rule ID leaked into badge");
+    });
+    return "READY stages show Advisory, never false Blocking";
+  });
+
+  await flow("dash_blocking_unit", async () => {
+    // Branch coverage for the badge policy with synthetic readiness:
+    // Blocking iff primary rule in blocking set; Advisory iff gate open;
+    // silence otherwise. State restored afterwards.
+    const FF = window.EssayScaffFeedback;
+    const box = window.document.getElementById("thesisPrompts");
+    const saved = box.innerHTML;
+    try {
+      box.innerHTML = '<div class="prompt"><strong>Q</strong></div>';
+      FF.markBlocking("thesisPrompts", "THESIS_003",
+        { blocking_rules: ["THESIS_003"], stage3_allowed: false }, "stage3_allowed");
+      let b = box.querySelector(".badge-block");
+      if (!b || b.textContent.indexOf("Blocking") < 0) throw new Error("Blocking badge missing");
+      if (/[A-Z]+_\d{3}/.test(b.textContent)) throw new Error("rule ID leaked into badge");
+      box.innerHTML = '<div class="prompt"><strong>Q</strong></div>';
+      FF.markBlocking("thesisPrompts", "THESIS_004",
+        { blocking_rules: ["THESIS_003"], stage3_allowed: false }, "stage3_allowed");
+      if (box.querySelector(".badge-block")) throw new Error("false Blocking badge");
+      if (box.querySelector(".badge-open")) throw new Error("Advisory shown while gated");
+      box.innerHTML = '<div class="prompt"><strong>Q</strong></div>';
+      FF.markBlocking("thesisPrompts", "THESIS_004",
+        { blocking_rules: [], stage3_allowed: true }, "stage3_allowed");
+      const a = box.querySelector(".badge-open");
+      if (!a || a.textContent.indexOf("Advisory") < 0) throw new Error("Advisory badge missing");
+    } finally {
+      box.innerHTML = saved;
+    }
+    return "Blocking/Advisory/silence all correct";
   });
 
   await flow("transparency_keeps_all_findings", async () => {

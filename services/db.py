@@ -1,8 +1,10 @@
-"""SQLite persistence for analysis runs.
+"""SQLite persistence for analysis runs, stage revisions, analytics, and validation.
 
-One table is enough for Phase 1. Technical trace + feedback are stored as
-JSON text so that, given an analysis ID, we can inspect exactly what
-happened.
+Technical trace + feedback are stored as JSON text so that, given an
+analysis ID, we can inspect exactly what happened. Stage revisions are
+append-only (UNIQUE session/revision pairs); interaction events and time
+intervals are append-only research logs; validation tables are append-only
+research records.
 """
 
 from __future__ import annotations
@@ -389,10 +391,11 @@ CREATE TABLE IF NOT EXISTS stage_time_intervals (
     created_at TEXT NOT NULL,
     UNIQUE(session_id, stage, started_at, ended_at)
     -- NOTE (deferred, documented 2026-10-09): the UNIQUE key dedups
-    -- identical replays only. Manually posted OVERLAPPING intervals still
-    -- sum naively. Merging overlaps on read was deferred because it would
-    -- change research semantics; legitimate clients never overlap (close +
-    -- reopen chains bounds). See learning_analytics.aggregate.
+    -- identical replays only. Manually posted OVERLAPPING intervals are
+    -- merged on read (learning_analytics._union_active_ms caps each merged
+    -- wall-clock span at its own duration and reports overlap_adjusted_ms),
+    -- so overlaps can never inflate aggregates. Legitimate clients never
+    -- overlap (close + reopen chains bounds). See learning_analytics.aggregate.
 );
 """
 
@@ -426,25 +429,57 @@ def _migrate_interaction_stage_nullable() -> None:
     copies all rows verbatim. No rows are added, removed, or altered —
     only the column constraint is relaxed. Fresh databases already use
     the nullable schema and skip the rebuild (PRAGMA notnull == 0).
+
+    Crash-safe: the legacy table is copied to interaction_events_backup
+    before the rebuild, and a leftover legacy table from an interrupted
+    run is restored (not rebuilt over). Either way the original rows
+    survive; only one extra backup table may briefly exist.
     """
     conn = sqlite3.connect(db_path())
     try:
         cols = conn.execute("PRAGMA table_info(interaction_events)").fetchall()
+        legacy = conn.execute("PRAGMA table_info(interaction_events_legacy)").fetchall()
+        if legacy and cols:
+            # Previous run crashed between RENAME and DROP: the legacy copy
+            # holds every original row, so restore it instead of rebuilding.
+            conn.execute("DROP TABLE interaction_events")
+            conn.execute("ALTER TABLE interaction_events_legacy RENAME TO interaction_events")
+            conn.execute("DROP TABLE IF EXISTS interaction_events_backup")
+            conn.commit()
+            return
         if not cols:
             return
         stage_col = [c for c in cols if c[1] == "stage"]
         if not stage_col or stage_col[0][3] == 0:
             return
         conn.execute("ALTER TABLE interaction_events RENAME TO interaction_events_legacy")
-        conn.execute(INTERACTION_EVENTS_SCHEMA.replace(
-            "CREATE TABLE IF NOT EXISTS interaction_events",
-            "CREATE TABLE interaction_events"))
-        col_names = ", ".join(c[1] for c in cols)
-        conn.execute(
-            f"INSERT INTO interaction_events ({col_names}) "
-            "SELECT " + col_names + " FROM interaction_events_legacy")
-        conn.execute("DROP TABLE interaction_events_legacy")
-        conn.commit()
+        try:
+            conn.execute("DROP TABLE IF EXISTS interaction_events_backup")
+            conn.execute("CREATE TABLE interaction_events_backup AS "
+                         "SELECT * FROM interaction_events_legacy")
+            conn.execute(INTERACTION_EVENTS_SCHEMA.replace(
+                "CREATE TABLE IF NOT EXISTS interaction_events",
+                "CREATE TABLE interaction_events"))
+            col_names = ", ".join(c[1] for c in cols)
+            conn.execute(
+                f"INSERT INTO interaction_events ({col_names}) "
+                "SELECT " + col_names + " FROM interaction_events_legacy")
+            conn.execute("DROP TABLE interaction_events_legacy")
+            conn.execute("DROP TABLE interaction_events_backup")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            try:
+                conn.execute("DROP TABLE IF EXISTS interaction_events")
+                conn.execute("ALTER TABLE interaction_events_legacy RENAME TO interaction_events")
+                conn.execute("DROP TABLE IF EXISTS interaction_events_backup")
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            raise
     finally:
         conn.close()
 

@@ -271,6 +271,8 @@
         explanation: p3.why_shown || null,
         evidence: p3.target ? "About: " + p3.target : null,
       } : null);
+      window.EssayScaffFeedback.markBlocking("outlinePrompts",
+        p3 ? p3.rule_id : null, d.readiness, "stage4_allowed");
       window.EssayScaffFeedback.updateFeedbackFocus();
     } else {
       $("outlinePrompts").innerHTML = outlineCards.join("") || "<p>No questions right now.</p>";

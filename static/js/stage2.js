@@ -161,6 +161,8 @@
         explanation: p2.why_shown || null,
         evidence: p2.target ? "About: " + p2.target : null,
       } : null);
+      window.EssayScaffFeedback.markBlocking("thesisPrompts",
+        p2 ? p2.rule_id : null, d.readiness, "stage3_allowed");
       window.EssayScaffFeedback.updateFeedbackFocus();
     } else {
       $("thesisPrompts").innerHTML = thesisCards.join("") || "<p>No questions right now.</p>";

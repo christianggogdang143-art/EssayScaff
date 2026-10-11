@@ -24,6 +24,33 @@
     if (el) el.textContent = value;
   }
 
+  // Research API token: only enforced server-side when ESSAYSCAFF_API_TOKEN
+  // is set; local open deployments ignore the header. Kept in sessionStorage
+  // (per-tab, never persisted to disk by the app).
+  function researchToken() {
+    try { return sessionStorage.getItem("essayscaff.apiToken") || ""; }
+    catch (e) { return ""; }
+  }
+  function vfetch(url, opts) {
+    opts = opts || {};
+    var token = researchToken();
+    if (token && String(url).indexOf("/api/validation/") !== -1) {
+      var headers = {};
+      Object.keys(opts.headers || {}).forEach(function (k) { headers[k] = opts.headers[k]; });
+      headers["X-Research-Token"] = token;
+      opts.headers = headers;
+    }
+    return fetch(url, opts);
+  }
+  var tokenEl = $("apiToken");
+  if (tokenEl) {
+    try { tokenEl.value = researchToken(); } catch (e) { /* private mode */ }
+    tokenEl.addEventListener("change", function () {
+      try { sessionStorage.setItem("essayscaff.apiToken", tokenEl.value); }
+      catch (e) { /* private mode */ }
+    });
+  }
+
   // ---- tabs ----
   const tabs = Array.from(document.querySelectorAll("[data-vtab]"));
   tabs.forEach(function (btn) {
@@ -38,7 +65,7 @@
 
   // ---- datasets ----
   async function refreshDatasets() {
-    const r = await readJson(await fetch("/api/validation/datasets"));
+    const r = await readJson(await vfetch("/api/validation/datasets"));
     if (r.status !== 200) return;
     const list = r.body.datasets || [];
     const html = list.map(function (d) {
@@ -58,7 +85,7 @@
   }
 
   $("dsCreate").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/datasets", {
+    const r = await readJson(await vfetch("/api/validation/datasets", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: $("dsName").value, detector_id: $("dsDetector").value, description: $("dsDesc").value })
     }));
@@ -67,13 +94,13 @@
   });
 
   $("demoEnsure").addEventListener("click", async function () {
-    await readJson(await fetch("/api/validation/demo/ensure", { method: "POST" }));
+    await readJson(await vfetch("/api/validation/demo/ensure", { method: "POST" }));
     await refreshDatasets();
   });
 
   $("sAdd").addEventListener("click", async function () {
     const kws = $("sKws").value.split(";").map(function (k) { return k.trim(); }).filter(Boolean);
-    const r = await readJson(await fetch("/api/validation/datasets/" + $("sDataset").value + "/samples", {
+    const r = await readJson(await vfetch("/api/validation/datasets/" + $("sDataset").value + "/samples", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_text: $("sText").value, topic: $("sTopic").value || null, teacher_keywords: kws.length ? kws : null })
     }));
@@ -82,7 +109,7 @@
   });
 
   $("csvImport").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/datasets/" + $("sDataset").value + "/import", {
+    const r = await readJson(await vfetch("/api/validation/datasets/" + $("sDataset").value + "/import", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ csv_text: $("csvText").value, annotator_id: $("csvAnnotator").value })
     }));
@@ -93,7 +120,7 @@
   // ---- annotation (BLINDED: only annotate-view + annotations endpoints) ----
   $("annLoad").addEventListener("click", async function () {
     const id = $("annSample").value.trim();
-    const r = await readJson(await fetch("/api/validation/samples/" + encodeURIComponent(id) + "/annotate-view"));
+    const r = await readJson(await vfetch("/api/validation/samples/" + encodeURIComponent(id) + "/annotate-view"));
     if (r.status !== 200) { setText("annView", "Error: " + (r.body.error || r.status)); return; }
     const v = r.body;
     annDetector = v.detector_id;
@@ -110,7 +137,7 @@
   let annDetector = null;
   $("annSave").addEventListener("click", async function () {
     const id = $("annSample").value.trim();
-    const r = await readJson(await fetch("/api/validation/samples/" + encodeURIComponent(id) + "/annotations", {
+    const r = await readJson(await vfetch("/api/validation/samples/" + encodeURIComponent(id) + "/annotations", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         detector_id: annDetector,
@@ -122,7 +149,7 @@
 
   // ---- quality (human labels only; never predictions) ----
   async function qGet(suffix) {
-    const r = await readJson(await fetch("/api/validation/datasets/" + $("qDataset").value + suffix));
+    const r = await readJson(await vfetch("/api/validation/datasets/" + $("qDataset").value + suffix));
     setText("qOut", "");
     setText("qPre", JSON.stringify(r.body, null, 2).slice(0, 4000));
   }
@@ -133,7 +160,7 @@
 
   // ---- freeze & run ----
   async function frPost(suffix, body) {
-    const r = await readJson(await fetch("/api/validation/datasets/" + $("frDataset").value + suffix, {
+    const r = await readJson(await vfetch("/api/validation/datasets/" + $("frDataset").value + suffix, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {})
     }));
     setText("frOut", JSON.stringify(r.body).slice(0, 2000));
@@ -152,7 +179,7 @@
 
   // ---- results ----
   async function refreshRuns(selectId) {
-    const r = await readJson(await fetch("/api/validation/runs"));
+    const r = await readJson(await vfetch("/api/validation/runs"));
     if (r.status !== 200) return;
     $("resRun").innerHTML = (r.body.runs || []).map(function (x) {
       var tag = x.is_demo ? "[DEMO] " : "[FORMAL] ";
@@ -170,10 +197,10 @@
   }
 
   $("resLoad").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/runs/" + $("resRun").value));
+    const r = await readJson(await vfetch("/api/validation/runs/" + $("resRun").value));
     if (r.status !== 200) { setText("resMatrix", "Error: " + (r.body.error || r.status)); return; }
     const d = r.body;
-    const lbl = await readJson(await fetch("/api/validation/runs/" + $("resRun").value + "/label"));
+    const lbl = await readJson(await vfetch("/api/validation/runs/" + $("resRun").value + "/label"));
     setText("resBadge", (lbl.body && lbl.body.result_label) || "");
     setText("resWarn", (d.warnings || []).join("\n") || "No warnings.");
     const orient = "Rows = system prediction, columns = human ground truth.";
@@ -209,19 +236,19 @@
   });
 
   $("expJson").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/runs/" + $("resRun").value + "/export.json"));
+    const r = await readJson(await vfetch("/api/validation/runs/" + $("resRun").value + "/export.json"));
     setText("expOut", JSON.stringify(r.body).slice(0, 3000));
   });
   $("expCsv").addEventListener("click", async function () {
-    const res = await fetch("/api/validation/runs/" + $("resRun").value + "/export.csv");
+    const res = await vfetch("/api/validation/runs/" + $("resRun").value + "/export.csv");
     setText("expOut", (await res.text()).slice(0, 3000));
   });
   $("expPkg").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/runs/" + $("resRun").value + "/export-package.json"));
+    const r = await readJson(await vfetch("/api/validation/runs/" + $("resRun").value + "/export-package.json"));
     setText("expOut", JSON.stringify(r.body).slice(0, 3000));
   });
   $("manuscriptBtn").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/runs/" + $("resRun").value + "/manuscript"));
+    const r = await readJson(await vfetch("/api/validation/runs/" + $("resRun").value + "/manuscript"));
     setText("expOut", (r.body.result_label + "\n\n" + r.body.text).slice(0, 3000));
   });
 
@@ -229,7 +256,7 @@
   $("errLoad").addEventListener("click", async function () {
     const mode = $("errFilter").value;
     const q = mode === "all" ? "" : (mode === "correct" ? "?correct=yes" : "?correct=no");
-    const r = await readJson(await fetch("/api/validation/runs/" + $("resRun").value + "/errors" + q));
+    const r = await readJson(await vfetch("/api/validation/runs/" + $("resRun").value + "/errors" + q));
     if (r.status !== 200) { setText("errList", "Error: " + (r.body.error || r.status)); return; }
     $("errList").innerHTML = (r.body.errors || []).map(function (e) {
       return "<div class='card'><p><strong>" + esc(e.sample_id) + "</strong> [" + esc(e.matrix_cell) + "] " +
@@ -242,7 +269,7 @@
 
   // ---- error categorization (documents only) ----
   async function loadCategories() {
-    const r = await readJson(await fetch("/api/validation/error-categories"));
+    const r = await readJson(await vfetch("/api/validation/error-categories"));
     if (r.status === 200) {
       $("catCategory").innerHTML = (r.body.categories || []).map(function (c) {
         return "<option value='" + esc(c) + "'>" + esc(c) + "</option>";
@@ -250,7 +277,7 @@
     }
   }
   $("catSave").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/runs/" + $("resRun").value + "/error-notes", {
+    const r = await readJson(await vfetch("/api/validation/runs/" + $("resRun").value + "/error-notes", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sample_id: $("catSample").value, category: $("catCategory").value, note: $("catNote").value, analyst: $("catAnalyst").value })
     }));
@@ -266,7 +293,7 @@
   $("anLoad").addEventListener("click", async function () {
     const sid = $("anSession").value.trim();
     if (!sid) { setText("anSummary", "Enter a stage session ID first."); return; }
-    const a = await readJson(await fetch("/api/analytics/session/" + encodeURIComponent(sid)));
+    const a = await readJson(await vfetch("/api/analytics/session/" + encodeURIComponent(sid)));
     if (a.status !== 200) { setText("anSummary", "Error: " + (a.body.error || a.status)); return; }
     const d = a.body, names = { stage1: "Stage 1", stage2: "Stage 2", stage3: "Stage 3", stage4: "Stage 4" };
     let html = "<p>Entry: " + esc(d.entry) + " · total revisions " + esc(d.total_revisions) + "</p>";
@@ -295,7 +322,7 @@
       html += "<h4>" + esc(g) + "</h4><ul>" + rows + "</ul>";
     });
     $("anSummary").innerHTML = html;
-    const e = await readJson(await fetch(
+    const e = await readJson(await vfetch(
       "/api/analytics/session/" + encodeURIComponent(sid) + "/events"));
     if (e.status !== 200) { setText("anEvents", "Error: " + (e.body.error || e.status)); return; }
     const rows = (e.body.events || []).map(function (ev) {
@@ -311,7 +338,7 @@
 
   // ---- provenance ----
   $("provLoad").addEventListener("click", async function () {
-    const r = await readJson(await fetch("/api/validation/freeze-record"));
+    const r = await readJson(await vfetch("/api/validation/freeze-record"));
     setText("provOut", JSON.stringify(r.body, null, 2));
   });
   loadCategories();

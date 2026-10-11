@@ -9,8 +9,9 @@ Stage link policy (server-side, not just disabled buttons):
 - Stage 4 with a linked Stage 3 session requires stage4_allowed; else 403.
 - Unlinked calls (no upstream session id) remain explicitly allowed as
   the direct/research path: standalone analysis without carried history.
-  The student UI always links Continue-ready sessions, so normal student
-  navigation can never bypass readiness server-side.
+  The student UI always links Continue-ready sessions, so the normal
+  student flow always passes readiness server-side; only the explicit
+  unlinked research path skips upstream gates (by design, documented here).
 """
 
 from __future__ import annotations

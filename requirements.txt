@@ -4,4 +4,5 @@ scikit-learn>=1.8,<2.0
 language-tool-python>=2.7
 nltk>=3.8
 pytest>=8.0
-requests>=2.31
+# NOTE: `requests` is intentionally not pinned here (no direct imports;
+# it arrives transitively via language-tool-python).

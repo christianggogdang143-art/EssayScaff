@@ -255,7 +255,7 @@ def _build_rules(structure, points, point_alignments, detail_alignments, unity, 
     n = len(points)
     rules.append(_rule("OUTLINE_001", "TRIGGERED" if n < config.OUTLINE_MIN_POINTS else "INACTIVE",
         {"point_count": n, "minimum": config.OUTLINE_MIN_POINTS},
-        f"Only {n} body point(s); at least {config.OUTLINE_MIN_POINTS} suggested." if n < 2 else f"{n} body points present."))
+        f"Only {n} body point(s); at least {config.OUTLINE_MIN_POINTS} suggested." if n < config.OUTLINE_MIN_POINTS else f"{n} body points present."))
     for i, p in enumerate(points):
         empty = not p["text"].strip()
         thin = p["alpha_count"] < config.OUTLINE_MIN_POINT_TOKENS

@@ -261,6 +261,8 @@
         stageLabel: "Stage 4", label: "Reflection guidance",
         explanation: null, evidence: null,
       } : null);
+      window.EssayScaffFeedback.markBlocking("reflectionPrompts",
+        p4 ? p4.rule_id : null, d.readiness, "reflection_complete");
     } else {
       $("reflectionPrompts").innerHTML = reflectCards.join("") || "<p>No questions right now.</p>";
     }

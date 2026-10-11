@@ -162,6 +162,34 @@ def test_interval_rejects_impossible_durations(client):
         assert res.status_code == 400, payload
 
 
+def test_overlapping_intervals_never_double_count(client):
+    sid = _idea(client).get_json()["session_id"]
+    a = _interval(sid, start="2026-10-09T00:00:00+00:00",
+                  end="2026-10-09T00:10:00+00:00", active=600000)
+    b = _interval(sid, start="2026-10-09T00:05:00+00:00",
+                  end="2026-10-09T00:15:00+00:00", active=600000)
+    assert client.post("/api/analytics/intervals", json=a).status_code == 201
+    assert client.post("/api/analytics/intervals", json=b).status_code == 201
+    per = client.get(f"/api/analytics/session/{sid}").get_json()["per_stage"]["stage1"]
+    # Merged wall clock [00:00, 00:15] caps the total at 900000, not 1200000.
+    assert per["active_time"]["active_ms"] == {"value": 900000, "status": "OK", "reason": None}
+    assert per["active_time"]["overlap_adjusted_ms"] == 300000
+    assert per["active_time"]["interval_count"] == 2
+
+
+def test_disjoint_intervals_sum_unchanged(client):
+    sid = _idea(client).get_json()["session_id"]
+    a = _interval(sid, start="2026-10-09T00:00:00+00:00",
+                  end="2026-10-09T00:05:00+00:00", active=60000)
+    b = _interval(sid, start="2026-10-09T00:10:00+00:00",
+                  end="2026-10-09T00:15:00+00:00", active=60000)
+    assert client.post("/api/analytics/intervals", json=a).status_code == 201
+    assert client.post("/api/analytics/intervals", json=b).status_code == 201
+    per = client.get(f"/api/analytics/session/{sid}").get_json()["per_stage"]["stage1"]
+    assert per["active_time"]["active_ms"] == {"value": 120000, "status": "OK", "reason": None}
+    assert per["active_time"]["overlap_adjusted_ms"] == 0
+
+
 # ------------------------------------------------ chain + aggregates
 def test_chain_resolution_all_directions(client):
     s1, s2, s3, s4 = _chain(client)

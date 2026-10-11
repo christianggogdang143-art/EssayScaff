@@ -397,7 +397,7 @@ def build_pipeline(ctx: dict) -> list[dict]:
         },
         "persistence": {
             "input": "analysis record (summary + feedback + technical + transparency)",
-            "process": "SQLite INSERT OR REPLACE into analysis_runs",
+            "process": "SQLite plain INSERT into analysis_runs (append-only; ID collisions retry with a fresh ID, never overwrite)",
             "output": {"stored": True},
             "timing_ms": ctx.get("db_ms", 0.0),
         },

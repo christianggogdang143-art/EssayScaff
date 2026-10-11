@@ -208,6 +208,12 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   border-radius: 999px; padding: 1px 10px;
   background: #eef1f6; color: var(--muted);
 }
+.badge-block {
+  background: #fdecea; color: #9c2b2e; border: 1px solid #e5a49f;
+}
+.badge-open {
+  background: #e9f5ee; color: #2e7d4f; border: 1px solid #bfe3cf;
+}
 .warning { background: var(--warn-bg); border: 1px solid #e3c98f; border-radius: 10px; padding: 8px 12px; margin: 8px 0; font-size: 0.85rem; }
 .denied { background: #fdecea; border: 1px solid #e5a49f; border-radius: 10px; padding: 8px 12px; }
 .hint { color: var(--muted); font-size: 0.85rem; }

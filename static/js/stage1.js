@@ -103,6 +103,11 @@
     if (window.EssayScaffFeedback) {
       window.EssayScaffFeedback.renderOne("guidedPrompts", cards, "<p>No questions right now.</p>");
       window.EssayScaffFeedback.setWhy("guidedPrompts", primaryWhy(d));
+      // Blocking-vs-advisory marker (display only; readiness untouched).
+      var g1 = d.guidance || {};
+      var firstRule = (g1.main || (g1.others || [])[0]) ? null
+        : (((d.prompts || {}).prompts || [])[0] || {}).rule_id || null;
+      window.EssayScaffFeedback.markBlocking("guidedPrompts", firstRule, d.readiness, "stage2_allowed");
       window.EssayScaffFeedback.updateFeedbackFocus();
     } else {
       $("guidedPrompts").innerHTML = cards.join("") || "<p>No questions right now.</p>";

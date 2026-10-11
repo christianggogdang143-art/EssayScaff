@@ -35,16 +35,23 @@
   function isInt(n) { return typeof n === "number" && isFinite(n) && Math.floor(n) === n; }
 
   /* Logical spans for one text: 1:1 with usable feedback items, sorted.
-   * Pure function (no DOM) so tests can verify offset fidelity exactly. */
+   * Pure function (no DOM) so tests can verify offset fidelity exactly.
+   * Backend offsets count Unicode code points (Python str indices) while
+   * JS strings index UTF-16 code units, so spans are converted through a
+   * code-point map: astral-plane characters (emoji) can never drift the
+   * highlights that follow them. Returned indices are UTF-16 (for slice). */
   function spansFor(text, items) {
-    var len = String(text == null ? "" : text).length;
-    var out = [];
+    text = String(text == null ? "" : text);
+    var chars = Array.from(text);
+    var cuAt = [0];
+    for (var i = 0; i < chars.length; i++) cuAt.push(cuAt[i] + chars[i].length);
+    var n = chars.length, out = [];
     (items || []).forEach(function (it) {
       if (!it) return;
       var s = it.start, e = it.end;
-      if (!isInt(s) || !isInt(e) || s < 0 || e <= s || e > len) return;
+      if (!isInt(s) || !isInt(e) || s < 0 || e <= s || e > n) return;
       out.push({ fb: (it.feedback_id == null ? "" : String(it.feedback_id)),
-        start: s, end: e, cls: colorClass(it) });
+        start: cuAt[s], end: cuAt[e], cls: colorClass(it) });
     });
     out.sort(function (a, b) {
       if (a.start !== b.start) return a.start - b.start;
