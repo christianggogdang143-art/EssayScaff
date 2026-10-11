@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EssayScaff — Academic Writing Scaffold</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body data-view="student">
+  <a class="skip" href="#workspaceTabs">Skip to writing workspace</a>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-name">EssayScaff</span>
+      <span class="brand-sub">Academic Writing Scaffold</span>
+    </div>
+    <nav class="stages" aria-label="Writing stages">
+      <span class="stage-pill" data-stage="1"><strong>1</strong> Idea</span>
+      <span class="stage-pill" data-stage="2"><strong>2</strong> Thesis</span>
+      <span class="stage-pill" data-stage="3"><strong>3</strong> Outline</span>
+      <span class="stage-pill" data-stage="4" title="Stage 4 reflection"><strong>4</strong> Reflection</span>
+    </nav>
+    <div class="seg" role="group" aria-label="View mode">
+      <button id="studentViewBtn" type="button" class="seg-btn active">Student</button>
+      <button id="transparencyViewBtn" type="button" class="seg-btn">Transparency</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="workspace">
+      <div class="ws-tabs" id="workspaceTabs" role="tablist" aria-label="Workspace stages">
+        <button type="button" class="tab active" data-ws="stage1Section" role="tab" aria-selected="true">Stage 1</button>
+        <button type="button" class="tab" data-ws="stage2Section" role="tab" aria-selected="false">Stage 2</button>
+        <button type="button" class="tab" data-ws="stage3Section" role="tab" aria-selected="false">Stage 3</button>
+        <button type="button" class="tab" data-ws="stage4Section" role="tab" aria-selected="false">Stage 4</button>
+        <button type="button" class="tab" data-ws="studentSection" role="tab" aria-selected="false">Writing Lab</button>
+      </div>
+      <section class="card" id="stage1Section" aria-labelledby="s1h">
+        <h2 id="s1h">Stage 1 — Pre-Writing &amp; Idea Generation</h2>
+        <div class="field">
+          <label for="s1Topic">Assignment Topic</label>
+          <input id="s1Topic" type="text" placeholder="Effects of climate change on agriculture" />
+        </div>
+        <div class="field field-quiet">
+          <label for="s1Keywords">Teacher Focus Keywords</label>
+          <input id="s1Keywords" type="text" placeholder="climate, agriculture, farmers, crop, temperature, rainfall" />
+        </div>
+        <div class="field">
+          <label for="ideaEditor">Your Initial Idea</label>
+          <p class="hint">Write what you currently think about the topic. It does not need to be perfect.</p>
+          <textarea id="ideaEditor" placeholder="Write your current idea in your own words..."></textarea>
+        </div>
+        <div class="toolbar">
+          <span class="stat"><span id="ideaWords">0</span> words</span>
+          <span class="stat"><span id="ideaSents">0</span> sentences</span>
+          <span class="stat" id="ideaMeta"></span>
+          <span class="spacer"></span>
+          <button id="ideaSampleBtn" type="button">Load Example</button>
+          <button id="ideaBtn" type="button" class="primary">Analyze My Idea</button>
+        </div>
+        <p class="statusline" id="ideaStatus" aria-live="polite"></p>
+        <div class="controls">
+          <button id="stage2Btn" type="button" disabled>Continue to Stage 2</button>
+        </div>
+      </section>
+
+      <section class="card" id="stage2Section" aria-labelledby="s2h" hidden>
+        <h2 id="s2h">Stage 2 — Thesis Formulation</h2>
+        <div class="field">
+          <label for="s2Stage1">Stage 1 session (optional link)</label>
+          <div class="row">
+            <input id="s2Stage1" type="text" placeholder="SES-20261004-XXXXXX" />
+            <button id="s2LinkBtn" type="button">Link Stage 1</button>
+          </div>
+        </div>
+        <h3>Your Developed Idea <span class="ro">read-only reference</span></h3>
+        <div id="stage1IdeaRef"><p class="hint">Link a Stage 1 session to see your developed idea here. Your idea is never rewritten into a thesis.</p></div>
+        <div class="field">
+          <label for="thesisEditor">Your Thesis Statement</label>
+          <p class="hint">State one clear claim in your own words.</p>
+          <textarea id="thesisEditor" rows="4" placeholder="Write your thesis statement here..."></textarea>
+        </div>
+        <div class="toolbar">
+          <span class="stat"><span id="thesisWords">0</span> words</span>
+          <span class="stat"><span id="thesisSents">0</span> sentences</span>
+          <span class="stat" id="thesisMeta"></span>
+          <span class="spacer"></span>
+          <button id="thesisBtn" type="button" class="primary">Analyze Thesis</button>
+        </div>
+        <p class="statusline" id="thesisStatus" aria-live="polite"></p>
+        <div class="controls">
+          <button id="stage3Btn" type="button" disabled>Continue to Stage 3</button>
+        </div>
+      </section>
+
+      <section class="card" id="stage3Section" aria-labelledby="s3h" hidden>
+        <h2 id="s3h">Stage 3 — Outline Development</h2>
+        <div class="field">
+          <label for="s3Stage2">Stage 2 session (optional link)</label>
+          <div class="row">
+            <input id="s3Stage2" type="text" placeholder="SES2-20261004-XXXXXX" />
+            <button id="s3LinkBtn" type="button">Link Stage 2</button>
+          </div>
+        </div>
+        <h3>Your Thesis <span class="ro">read-only reference</span></h3>
+        <div id="stage2ThesisRef"><p class="hint">Link a Stage 2 session to see your thesis here. It is never turned into outline points for you.</p></div>
+        <h3>Build Your Outline</h3>
+        <div id="outlineEditor"></div>
+        <div class="toolbar">
+          <span class="stat" id="outlineMeta"></span>
+          <span class="spacer"></span>
+          <button id="addPointBtn" type="button">+ Add Body Point</button>
+          <button id="outlineBtn" type="button" class="primary">Analyze Outline</button>
+        </div>
+        <p class="statusline" id="outlineStatus" aria-live="polite"></p>
+        <div class="controls">
+          <button id="stage4Btn" type="button" disabled>Continue to Stage 4</button>
+        </div>
+      </section>
+
+      <section class="card" id="stage4Section" aria-labelledby="s4h" hidden>
+        <h2 id="s4h">Stage 4 — Reflection &amp; Revision</h2>
+        <div class="field">
+          <label for="s4Stage1">Linked sessions (Stage 3 link enforces readiness)</label>
+          <div class="row">
+            <input id="s4Stage1" type="text" placeholder="SES-20261004-XXXXXX" />
+            <input id="s4Stage2" type="text" placeholder="SES2-20261004-XXXXXX" aria-label="Stage 2 session ID" />
+            <input id="s4Stage3" type="text" placeholder="SES3-20261004-XXXXXX" aria-label="Stage 3 session ID" />
+            <button id="s4LinkBtn" type="button">Load Plan</button>
+          </div>
+        </div>
+        <h3>Your Writing Plan <span class="ro">read-only reference</span></h3>
+        <div id="stage4PlanRef"><p class="hint">Link your Stage 1–3 sessions to review the full plan here. Nothing here is rewritten for you.</p></div>
+        <h3>Reflect In Your Own Words <span class="ro">optional, stored only</span></h3>
+        <div class="field">
+          <label for="reflectNote">After reviewing your plan, what is one part you still want to improve?</label>
+          <textarea id="reflectNote" rows="3" placeholder="Write your own reflection..."></textarea>
+        </div>
+        <details><summary>Conclusion draft (optional — stored only, not analyzed)</summary>
+          <div class="field">
+            <label for="conclusionText">Conclusion</label>
+            <textarea id="conclusionText" rows="4" placeholder="Paste a conclusion draft if you have one...."></textarea>
+          </div>
+        </details>
+        <div class="toolbar">
+          <span class="stat" id="reflectMeta"></span>
+          <span class="spacer"></span>
+          <button id="reflectBtn" type="button" class="primary">Reflect On My Plan</button>
+        </div>
+        <p class="statusline" id="reflectStatus" aria-live="polite"></p>
+        <div class="controls">
+          <button id="labBtn" type="button" hidden>Start Writing My Essay</button>
+        </div>
+      </section>
+
+      <section class="card" id="studentSection" aria-labelledby="labh" hidden>
+        <h2 id="labh">Writing Lab <span class="ro">live analysis</span></h2>
+        <div class="field">
+          <label for="editor">Student Text</label>
+          <p class="hint">Type your writing below (analysis runs after you pause).</p>
+          <div class="hl-wrap">
+            <div id="editorBackdrop" class="hl-backdrop" aria-hidden="true"></div>
+            <textarea id="editor" rows="10" placeholder="Type your academic writing here..."></textarea>
+          </div>
+          <p class="hint hl-legend" id="hlLegend"><span class="hl-chip hl-warn">Needs attention</span><span class="hl-chip hl-info">Suggestion</span><span class="hl-chip hl-mech">Mechanics</span><span class="muted">Colors mark feedback type only — click a highlight or card to jump.</span></p>
+        </div>
+        <div class="toolbar">
+          <span class="stat"><span id="edWords">0</span> words</span>
+          <span class="stat"><span id="edSents">0</span> sentences</span>
+          <span class="stat" id="edMeta"></span>
+          <span class="spacer"></span>
+          <button id="sampleBtn" type="button">Load Sample</button>
+          <button id="analyzeBtn" type="button" class="primary">Analyze Now</button>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="topic">Topic (optional)</label>
+            <input id="topic" type="text" placeholder="Effects of climate change on agriculture" />
+          </div>
+          <div class="field">
+            <label for="teacherKeywords">Teacher keywords (optional)</label>
+            <input id="teacherKeywords" type="text" placeholder="climate, agriculture, farmers, crop, temperature, rainfall" />
+          </div>
+          <div class="field field-small">
+            <label for="stage">Stage</label>
+            <select id="stage">
+              <option value="introduction">introduction</option>
+              <option value="body">body</option>
+              <option value="conclusion">conclusion</option>
+            </select>
+          </div>
+        </div>
+        <p class="statusline" id="status" aria-live="polite"></p>
+      </section>
+    </div>
+
+    <aside class="sidebar" aria-label="Feedback and analysis">
+      <div class="side-tabs" id="studentTabs" role="tablist" aria-label="Feedback tabs">
+        <button type="button" class="tab active" data-pane="pane-feedback" role="tab" aria-selected="true">Feedback</button>
+        <button type="button" class="tab" data-pane="pane-concepts" role="tab" aria-selected="false">Concepts</button>
+        <button type="button" class="tab" data-pane="pane-progress" role="tab" aria-selected="false">Progress</button>
+        <button type="button" class="tab" data-pane="pane-reflection" role="tab" aria-selected="false">Reflection</button>
+        <button type="button" class="tab" data-pane="pane-revisions" role="tab" aria-selected="false">Revisions</button>
+      </div>
+      <div class="side-tabs" id="transTabs" role="tablist" aria-label="Transparency tabs" hidden>
+        <button type="button" class="tab active" data-pane="pane-pipeline" role="tab" aria-selected="true">Pipeline</button>
+        <button type="button" class="tab" data-pane="pane-tokens" role="tab" aria-selected="false">Tokens</button>
+        <button type="button" class="tab" data-pane="pane-nlp" role="tab" aria-selected="false">NLP</button>
+        <button type="button" class="tab" data-pane="pane-rules" role="tab" aria-selected="false">Rules</button>
+        <button type="button" class="tab" data-pane="pane-source" role="tab" aria-selected="false">Source</button>
+        <button type="button" class="tab" data-pane="pane-timing" role="tab" aria-selected="false">Timing</button>
+      </div>
+      <div class="side-panes">
+        <div id="pane-feedback" class="side-pane" role="tabpanel">
+          <h3>Guided Feedback</h3>
+          <p class="hint" id="feedbackFocusLine">Guided Feedback — current stage</p>
+          <div id="dashGoal" class="dash dash-goal" hidden></div>
+          <div id="overview" hidden></div>
+          <div id="feedback"><p class="hint">Feedback will appear here.</p></div>
+          <div id="guidedPrompts"><p class="hint">Stage 1 reflective questions will appear here.</p></div>
+          <div id="thesisPrompts"><p class="hint">Stage 2 reflective questions will appear here.</p></div>
+          <div id="outlinePrompts"><p class="hint">Stage 3 reflective questions will appear here.</p></div>
+          <div id="reflectionPrompts"><p class="hint">Stage 4 reflective questions will appear here.</p></div>
+          <details id="dashWhy" class="dash-why" hidden>
+            <summary>Why am I seeing this?</summary>
+            <div id="dashWhyBody"></div>
+          </details>
+          <div id="dashWorking" class="dash" hidden></div>
+          <div id="dashNext" class="dash" hidden></div>
+          <div id="dashChecklist" class="dash" hidden></div>
+          <div id="dashSnapshot" class="dash" hidden></div>
+          <div id="dashPrev" class="dash-prev"><button id="feedbackHistoryBtn" type="button">Previous feedback (<span id="dashPrevCount">0</span>) ›</button></div>
+        </div>
+        <div id="pane-concepts" class="side-pane" role="tabpanel" hidden>
+          <h3>Detected Concepts</h3>
+          <div id="topicConnection"></div>
+          <div id="conceptChips"><p class="hint">Concepts from your idea will appear here.</p></div>
+          <div id="thesisComponents"><p class="hint">Thesis components will appear here.</p></div>
+          <div id="outlineTree"><p class="hint">Your outline tree will appear here.</p></div>
+        </div>
+        <div id="pane-progress" class="side-pane" role="tabpanel" hidden>
+          <h3>Stage Progress</h3>
+          <div id="stageStatus"><p class="hint">Stage 1 not assessed yet.</p></div>
+          <div id="thesisReadiness"><p class="hint">Stage 2 not assessed yet.</p></div>
+          <div id="outlineReadiness"><p class="hint">Stage 3 not assessed yet.</p></div>
+          <div id="reflectionReadiness"><p class="hint">Stage 4 not assessed yet.</p></div>
+          <div id="processAnalytics"><p class="hint">Analyze writing in any stage to see your process here. Only counts — never scores.</p></div>
+        </div>
+        <div id="pane-reflection" class="side-pane" role="tabpanel" hidden>
+          <h3>Reflection</h3>
+          <div id="reflectionStatus"><p class="hint">No reflection yet.</p></div>
+          <div id="reflectionChecklist"></div>
+          <div id="reflectionHistory"><p class="hint">No reflection revisions yet.</p></div>
+        </div>
+        <div id="pane-revisions" class="side-pane" role="tabpanel" hidden>
+          <h3>Revision History</h3>
+          <div id="revisionHistory"><p class="hint">No idea revisions yet.</p></div>
+          <div id="thesisHistory"><p class="hint">No thesis revisions yet.</p></div>
+          <div id="outlineHistory"><p class="hint">No outline revisions yet.</p></div>
+        </div>
+        <div id="pane-pipeline" class="side-pane" role="tabpanel" hidden>
+          <h3>Transparency — <span id="transRunId">no analysis yet</span></h3>
+          <div id="histWarning" class="warning" hidden></div>
+          <div id="runInfo"></div>
+          <div class="row">
+            <label for="historyId">Historical run</label>
+            <input id="historyId" type="text" placeholder="RUN-20261004-000001" />
+            <button id="historyBtn" type="button">Load</button>
+          </div>
+          <h4>Pipeline — select a step to inspect it</h4>
+          <div id="pipeline"></div>
+          <div id="tab-pipeline"><p class="hint">Click a pipeline block above.</p></div>
+        </div>
+        <div id="pane-tokens" class="side-pane" role="tabpanel" hidden>
+          <h3>Tokens</h3>
+          <div id="tokenDetail"><p class="hint">Select a token row to trace it to its sentence and source text.</p></div>
+          <div class="tablewrap table-scroll"><table id="transTokenTable">
+            <thead><tr><th>#</th><th>Token</th><th>Lemma</th><th>POS</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+        <div id="pane-nlp" class="side-pane" role="tabpanel" hidden>
+          <h3>NLP Details</h3>
+          <div id="techOverview"><p class="hint">No analysis yet.</p></div>
+          <details open><summary>Sentences</summary><div id="techSentences"></div></details>
+          <details><summary>Full token table</summary>
+            <div class="tablewrap table-scroll"><table id="tokenTable">
+              <thead><tr><th>#</th><th>Token</th><th>Lemma</th><th>POS</th><th>Tag</th><th>Dep</th><th>Stopword</th><th>Sent</th><th>Start</th><th>End</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </details>
+          <details><summary>Lemmas</summary><div id="techLemmas"></div></details>
+          <details><summary>Stopwords</summary><div id="techStopwords"></div></details>
+          <details><summary>POS tags</summary><div id="techPos"></div></details>
+          <details><summary>Keywords</summary><div id="tab-keywords"></div></details>
+          <details><summary>WordNet</summary><div id="tab-wordnet"></div></details>
+          <details><summary>Topic (TF-IDF)</summary><div id="tab-topic"></div></details>
+          <details><summary>Stage 1</summary><div id="tab-stage1"><p class="hint">Analyze an idea first.</p></div></details>
+          <details><summary>Stage 2</summary><div id="tab-stage2"><p class="hint">Analyze a thesis first.</p></div></details>
+          <details><summary>Stage 3</summary><div id="tab-stage3"><p class="hint">Analyze an outline first.</p></div></details>
+          <details><summary>Stage 4</summary><div id="tab-stage4"><p class="hint">Reflect on your plan first.</p></div></details>
+          <details><summary>LanguageTool</summary><div id="tab-lt"></div></details>
+        </div>
+        <div id="pane-rules" class="side-pane" role="tabpanel" hidden>
+          <h3>Rules</h3>
+          <div id="tab-rules"></div>
+          <div id="tab-trace"></div>
+        </div>
+        <div id="pane-source" class="side-pane" role="tabpanel" hidden>
+          <h3>Source Code <span class="ro">read-only</span></h3>
+          <div class="row">
+            <label for="srcFile">File</label>
+            <select id="srcFile"></select>
+          </div>
+          <div class="row">
+            <label for="srcFunc">Function</label>
+            <input id="srcFunc" type="text" placeholder="analyze_text" />
+            <button id="srcBtn" type="button">Show code</button>
+          </div>
+          <p class="hint">Only approved research modules can be displayed; traversal and arbitrary paths are denied by the backend.</p>
+          <div id="srcOut"></div>
+        </div>
+        <div id="pane-timing" class="side-pane" role="tabpanel" hidden>
+          <h3>Timing <span class="ro">measured</span></h3>
+          <div id="techTimings"></div>
+          <div id="tab-log"></div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="card walkthrough" id="walkthrough" aria-labelledby="wt-h" hidden>
+      <h2 id="wt-h">Full Analysis Walkthrough <span class="ro">Transparency Mode</span></h2>
+      <div class="row">
+        <button id="copyAnalysisBtn" type="button" hidden>Copy Full Analysis</button>
+        <span class="hint" id="copyAnalysisMsg" aria-live="polite"></span>
+      </div>
+      <p class="hint">Scroll through every step EssayScaff performed on the current analysis, from raw text to readiness. Every value below comes from the live analysis response — nothing is invented. Missing data is labeled, never fabricated. The walkthrough always follows the active workspace tab above.</p>
+      <div id="walkthroughBody"><p class="hint">Analyze some text first — the walkthrough appears here in Transparency Mode.</p></div>
+    </section>
+  </main>
+  <footer class="research-link">
+    <a href="/research/validation">Researcher validation workspace</a>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/live_feedback.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/highlight.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/transparency.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/walkthrough.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/stage1.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/stage2.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/stage3.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/stage4.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/feedback_focus.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/shell.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+</body>
+</html>

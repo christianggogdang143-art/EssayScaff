@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# Local runtime database (dev/test traffic; recreated automatically via init_db)
+essayscaff.db
+*.log

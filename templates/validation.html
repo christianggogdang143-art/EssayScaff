@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EssayScaff — Researcher Validation Workspace (Phase 7A)</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <a class="skip" href="#valMain">Skip to validation workspace</a>
+  <main id="valMain">
+    <h1>Validation Workspace <span class="ro">researcher only — Phase 7A pilot</span></h1>
+    <p class="hint">Student workflow is unchanged: Idea → Thesis → Outline → Reflection.
+      This page validates frozen <strong>VR-2</strong> detectors against independent human labels.
+      <a href="/">Back to student workspace</a></p>
+    <div id="demoBanner" class="demo-banner" hidden></div>
+
+    <nav class="ws-tabs" role="tablist" aria-label="Validation sections">
+      <button role="tab" data-vtab="datasets" aria-selected="true">Datasets</button>
+      <button role="tab" data-vtab="annotate" aria-selected="false">Annotation (blinded)</button>
+      <button role="tab" data-vtab="quality" aria-selected="false">Quality check</button>
+      <button role="tab" data-vtab="freezerun" aria-selected="false">Freeze &amp; Run</button>
+      <button role="tab" data-vtab="results" aria-selected="false">Results</button>
+      <button role="tab" data-vtab="errors" aria-selected="false">Error analysis</button>
+      <button role="tab" data-vtab="analytics" aria-selected="false">Analytics</button>
+      <button role="tab" data-vtab="provenance" aria-selected="false">Provenance</button>
+    </nav>
+
+    <section id="vtab-datasets" role="tabpanel">
+      <h2>Datasets</h2>
+      <p class="hint">Formal datasets start empty. Import legitimate labeled data or annotate manually.
+        Pilot target: 50–100 samples per task with reasonable class balance (targets, not proof).</p>
+      <div>
+        <label for="dsName">Name</label>
+        <input id="dsName" class="field-small" type="text">
+        <label for="dsDetector">Detector</label>
+        <select id="dsDetector">
+          <option value="THESIS_002">THESIS_002 (binary)</option>
+          <option value="TOPIC_CLASSIFIER">TOPIC_CLASSIFIER (multiclass)</option>
+        </select>
+        <label for="dsDesc">Description</label>
+        <input id="dsDesc" class="field-small" type="text">
+        <button id="dsCreate" type="button">Create empty dataset</button>
+        <button id="demoEnsure" type="button">Load DEMO fixtures</button>
+      </div>
+      <div id="dsList"></div>
+      <h3>Add sample</h3>
+      <div>
+        <label for="sDataset">Dataset</label>
+        <select id="sDataset"></select>
+        <label for="sText">Raw text</label>
+        <textarea id="sText" rows="3" cols="60"></textarea>
+        <label for="sTopic">Topic (topic task only)</label>
+        <input id="sTopic" class="field-small" type="text">
+        <label for="sKws">Teacher keywords, ;-separated (topic task only)</label>
+        <input id="sKws" class="field-small" type="text">
+        <button id="sAdd" type="button">Add sample</button>
+      </div>
+      <h3>CSV import</h3>
+      <div>
+        <label for="csvText">Pasted CSV text (never a file path)</label>
+        <textarea id="csvText" rows="4" cols="60"></textarea>
+        <label for="csvAnnotator">Annotator ID</label>
+        <input id="csvAnnotator" class="field-small" type="text">
+        <button id="csvImport" type="button">Import</button>
+        <div id="csvOut"></div>
+      </div>
+    </section>
+
+    <section id="vtab-annotate" role="tabpanel" hidden>
+      <h2>Annotation <span class="ro">blinded — predictions hidden</span></h2>
+      <div id="annProto"></div>
+      <div>
+        <label for="annSample">Sample ID</label>
+        <input id="annSample" class="field-small" type="text">
+        <button id="annLoad" type="button">Load (blinded)</button>
+      </div>
+      <div id="annView"></div>
+      <div id="annForm" hidden>
+        <label for="annAnnotator">Annotator ID</label>
+        <input id="annAnnotator" class="field-small" type="text">
+        <label for="annLabel">Human label</label>
+        <select id="annLabel"></select>
+        <label for="annNotes">Notes</label>
+        <input id="annNotes" class="field-small" type="text">
+        <button id="annSave" type="button">Save annotation</button>
+      </div>
+    </section>
+
+    <section id="vtab-quality" role="tabpanel" hidden>
+      <h2>Quality check <span class="ro">human labels only — no predictions</span></h2>
+      <div>
+        <label for="qDataset">Dataset</label>
+        <select id="qDataset"></select>
+        <button id="qProgress" type="button">Show progress</button>
+        <button id="qQuality" type="button">Quality summary</button>
+        <button id="qDupes" type="button">Duplicate candidates</button>
+        <button id="qPreview" type="button">Freeze preview</button>
+      </div>
+      <div id="qOut"></div>
+      <pre id="qPre" class="timings"></pre>
+    </section>
+
+    <section id="vtab-freezerun" role="tabpanel" hidden>
+      <h2>Freeze &amp; Run</h2>
+      <div>
+        <label for="frDataset">Dataset</label>
+        <select id="frDataset"></select>
+        <button id="frToAnnotating" type="button">Begin annotating</button>
+        <button id="frFreeze" type="button">Freeze dataset</button>
+        <button id="frRun" type="button">Run VR-2 validation</button>
+        <div id="frOut"></div>
+      </div>
+    </section>
+
+    <section id="vtab-results" role="tabpanel" hidden>
+      <h2>Results <span class="ro">raw counts first</span></h2>
+      <div id="resBadge"></div>
+      <div>
+        <label for="resRun">Validation run</label>
+        <select id="resRun"></select>
+        <button id="resLoad" type="button">Load results</button>
+      </div>
+      <div id="resWarn"></div>
+      <div id="resMatrix"></div>
+      <div id="resMetrics"></div>
+      <div id="resBalance"></div>
+      <div id="resRater"></div>
+      <div>
+        <button id="expJson" type="button">Export JSON</button>
+        <button id="expCsv" type="button">Export CSV</button>
+        <button id="expPkg" type="button">Research package</button>
+        <button id="manuscriptBtn" type="button">Manuscript summary</button>
+        <pre id="expOut" class="timings"></pre>
+      </div>
+    </section>
+
+    <section id="vtab-errors" role="tabpanel" hidden>
+      <h2>Error analysis <span class="ro">predictions visible — post-evaluation only</span></h2>
+      <div>
+        <label for="errFilter">Filter</label>
+        <select id="errFilter">
+          <option value="all">ALL</option>
+          <option value="correct">CORRECT</option>
+          <option value="wrong">ERRORS ONLY</option>
+        </select>
+        <button id="errLoad" type="button">Load error cases</button>
+      </div>
+      <div id="errList"></div>
+      <h3>Categorize an error (documents only — never modifies VR-2)</h3>
+      <div>
+        <label for="catSample">Sample ID</label>
+        <input id="catSample" class="field-small" type="text">
+        <label for="catCategory">Category</label>
+        <select id="catCategory"></select>
+        <label for="catAnalyst">Analyst</label>
+        <input id="catAnalyst" class="field-small" type="text">
+        <label for="catNote">Note</label>
+        <input id="catNote" class="field-small" type="text">
+        <button id="catSave" type="button">Save error note</button>
+        <div id="catOut"></div>
+      </div>
+    </section>
+
+    <section id="vtab-analytics" role="tabpanel" hidden>
+      <h2>Interaction analytics <span class="ro">counts only — never scores</span></h2>
+      <p class="hint">Deterministic aggregates over stored revisions, interaction
+        events, and closed active-time intervals. Frequencies are counts of
+        stored conditions, not quality scores. Active time is client-measured
+        engaged time (visible tab + recent activity); idle gaps are excluded.</p>
+      <div>
+        <label for="anSession">Any stage session ID</label>
+        <input id="anSession" class="field-small" type="text">
+        <button id="anLoad" type="button">Load analytics</button>
+      </div>
+      <div id="anSummary"></div>
+      <h3>Event log <span class="ro">oldest first, capped</span></h3>
+      <div id="anEvents"></div>
+    </section>
+
+    <section id="vtab-provenance" role="tabpanel" hidden>
+      <h2>Provenance</h2>
+      <button id="provLoad" type="button">Show VR-2 freeze record</button>
+      <pre id="provOut" class="timings"></pre>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/validation.js') }}"></script>
+</body>
+</html>

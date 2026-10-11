@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EssayScaff — Information for Instructors</title>
+<style>
+  :root { --ink: #1f2430; --muted: #5b6472; --line: #dfe3ea; --accent: #2f5fd0; }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, "Times New Roman", serif; color: var(--ink);
+    max-width: 46rem; margin: 2rem auto; padding: 0 1.25rem; line-height: 1.5; font-size: 0.95rem; }
+  header { border-bottom: 2px solid var(--ink); margin-bottom: 1rem; padding-bottom: 0.5rem; }
+  h1 { font-size: 1.5rem; margin: 0; }
+  header p { color: var(--muted); margin: 0.25rem 0 0; font-style: italic; }
+  h2 { font-size: 1.05rem; margin: 1.1rem 0 0.35rem; color: var(--accent); }
+  p, li { margin: 0.3rem 0; }
+  ul { padding-left: 1.3rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin: 0.5rem 0; }
+  th, td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  th { background: #f4f6f9; }
+  .box { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.9rem;
+    background: #fafbfe; margin: 0.6rem 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.2rem 1.2rem; }
+  footer { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: 0.5rem;
+    color: var(--muted); font-size: 0.8rem; }
+  .flow { counter-reset: step; list-style: none; padding-left: 0; }
+  .flow > li { counter-increment: step; margin: 0.55rem 0; padding-left: 2.2rem; position: relative; }
+  .flow > li::before { content: counter(step); position: absolute; left: 0; top: 0.1rem;
+    width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 0.8rem; font-weight: 700; text-align: center; line-height: 1.5rem; }
+  .flow code { font-size: 0.8em; }
+  .pagebreak { page-break-before: always; }
+  @media print { body { margin: 0; max-width: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>EssayScaff — Information for Instructors</h1>
+  <p>A rule-based academic writing scaffold: guidance and feedback, never ghostwriting, never grading.</p>
+</header>
+
+<h2>1. What it is</h2>
+<p>EssayScaff is a web application that guides students through planning an essay in four stages —
+<strong>Idea → Thesis → Outline → Reflection</strong> — followed by a <strong>Writing Lab</strong> for drafting.
+In Student Mode the sidebar acts as a writing-coach dashboard showing <strong>one primary action at a time</strong>
+(current goal, one feedback card, what's working, next step, checklist, writing snapshot, history link).
+Every finding is explainable in Transparency Mode.</p>
+
+<h2>2. The student workflow</h2>
+<table>
+  <tr><th>Stage</th><th>Student produces</th><th>System checks</th></tr>
+  <tr><td>1. Idea</td><td>Initial idea, topic, keywords</td><td>Development, focus, topic connection (PREWRITE rules)</td></tr>
+  <tr><td>2. Thesis</td><td>One thesis claim</td><td>Structure, specificity, scope, alignment with Stage 1 (THESIS rules)</td></tr>
+  <tr><td>3. Outline</td><td>Body points + supporting details</td><td>Thesis alignment, support, duplicates, coverage (OUTLINE rules)</td></tr>
+  <tr><td>4. Reflection</td><td>Review of the full plan</td><td>Recurring issues, regressions, stability (REFLECT rules, scaffold levels)</td></tr>
+  <tr><td>Writing Lab</td><td>The essay draft (introduction / body / conclusion)</td><td>Live writing feedback + starter guidance per section</td></tr>
+</table>
+<p>Students advance only through readiness gates (e.g. a thesis cannot proceed from an unready idea —
+enforced server-side). All revisions are stored append-only; nothing is overwritten.</p>
+
+<h2>3. Technical foundation</h2>
+<div class="cols"><ul>
+  <li><strong>spaCy</strong> — sentences, tokens, lemmas, POS, dependencies (conservative normalization only)</li>
+  <li><strong>Hand-written keyword ranking</strong> — frequency + POS + distribution score, fully shown</li>
+  <li><strong>NLTK WordNet</strong> — lexical expansion of teacher keywords (query only)</li>
+</ul><ul>
+  <li><strong>scikit-learn TF-IDF + cosine</strong> — 2 documents (topic vs. student), independently re-verified</li>
+  <li><strong>LanguageTool</strong> — mechanics only; grammar never blocks progress</li>
+  <li><strong>Deterministic rules + readiness</strong> — no machine-learning classifiers in the loop</li>
+</ul></div>
+
+<h2>4. Guarantees that matter for teaching &amp; research</h2>
+<div class="box"><ul>
+  <li><strong>Authorship preserved.</strong> The system asks questions and gives feedback; it generates no sentences and rewrites nothing.</li>
+  <li><strong>No grades or scores.</strong> Topic connection (WEAK / MODERATE / STRONG) is labeled <em>lexical evidence — not a grade</em>.</li>
+  <li><strong>Fully inspectable.</strong> Transparency Mode shows tokens, keyword math, TF-IDF vectors, cosine verification, every rule with evidence, and readiness conditions.</li>
+  <li><strong>Traceable.</strong> All revisions, triggered rules, and timestamps persist; resolved issues remain in history.</li>
+  <li><strong>Frozen for validation (VR-2).</strong> Detector code and thresholds are hash-pinned; no validation run executes unless both hashes match.</li>
+</ul></div>
+
+<h2>5. Honest limitations</h2>
+<p>No generative AI is used. The system works on <strong>lexical evidence only</strong> — it has no deep semantic
+understanding, and grammatically valid nonsense may pass some checks. Formal accuracy has not yet been established.
+Privacy by design: analytics record counts and timings only — never essay text or keystrokes.</p>
+
+<footer>EssayScaff · rule-based writing scaffolding · prepared for instructor review</footer>
+
+<div class="pagebreak"></div>
+<header>
+  <h1>EssayScaff — Technical Feedback Flow</h1>
+  <p>How one student text becomes feedback: a deterministic, fully inspectable pipeline.</p>
+</header>
+
+<ol class="flow">
+  <li><strong>Input.</strong> A string (student text) + optional topic/teacher keywords + stage label. Nothing else.</li>
+  <li><strong>Normalization (conservative).</strong> Unicode NFC + newline unification only — no lowercasing, no punctuation stripping, no stopword removal — so later findings point to exact character offsets.</li>
+  <li><strong>spaCy: sentences → tokens.</strong> Sentence spans, then per-token text, lemma, POS, tag, dependency, stopword flag, offsets. EssayScaff does no manual tokenizing; it reads these properties.</li>
+  <li><strong>Keyword extraction (own formula, not TF-IDF).</strong> <code>score = freq_weight × ln(1+freq) + POS_weight + dist_weight × (sentences_with_term / total_sentences)</code>, with per-term score parts stored and displayed.</li>
+  <li><strong>WordNet expansion (teacher concepts only).</strong> NLTK lookup logged as DIRECT / LEMMA / WORDNET / NO_MATCH with synsets and rejection reasons. Never injected into the essay analysis.</li>
+  <li><strong>TF-IDF + cosine + classification (scikit-learn).</strong> Exactly 2 documents (topic vs. student). <code>IDF(t) = ln((1+N)/(1+DF(t))) + 1</code>; cosine is independently recomputed by hand and must MATCH within tolerance; the number is banded WEAK / MODERATE / STRONG — lexical overlap only.</li>
+  <li><strong>Generic writing rules.</strong> Pattern/heuristic detectors (THESIS_001/002, STYLE, MECHANICS, LanguageTool) each return rule id, status, severity, sentence, evidence object, offsets, reason. Grammar is advisory and can never block progress.</li>
+  <li><strong>Stage rules (pedagogy layer).</strong> PREWRITE_001–008, THESIS_001–010 (+ subject/verb/stance components, Stage-1 alignment), OUTLINE_001–011 (+ unity, progression, duplicates, coverage), REFLECT rules over stored histories (recurring issues, regressions, scaffold level).</li>
+  <li><strong>Prompt selection = priority sort + anti-repetition.</strong> Fired rules sorted by explicit <code>priority_rank</code> (CRITICAL 0 → LOW 3); already-shown prompts deprioritized, so feedback fades as issues resolve. Showing only the head of this list is what makes Student Mode progressive.</li>
+  <li><strong>Feedback assembly + backtrace.</strong> Each card carries the chain <code>original text (chars X–Y) → evidence → rule (file :: function) → problem → category → reason → suggestion</code>. Any card traces mechanically to its exact text span and rule. Suggestion strings are static per rule; only evidence slots come from the student.</li>
+  <li><strong>Readiness gate (structural, no scores).</strong> Explicit PASS/FAIL conditions per stage (e.g. development, topic concepts, focus, no critical issue); all PASS sets the gate flag, enforced server-side (linked analysis on a not-ready session returns 403).</li>
+  <li><strong>Append-only persistence.</strong> Analysis, rule outputs, prompts, readiness, and timings stored as a new revision row; history is never updated or deleted — the basis for resolved-issue tracking and VR-2 validation hashes.</li>
+</ol>
+
+<div class="box">
+<strong>In one paragraph:</strong> a deterministic pipeline — spaCy annotates the text, a transparent keyword formula and WordNet describe the concept space, scikit-learn TF-IDF/cosine measures topic overlap (hand-verified), hand-written heuristic rules fire over that evidence, a priority-ranked selector with anti-repetition picks the questions, each card carries a backtrace to its exact text span and rule function, explicit readiness conditions gate progress, and every revision persists append-only. No ML classifiers, no generative model, no scores.
+</div>
+
+<footer>EssayScaff · technical feedback flow · page 2</footer>
+
+<div class="pagebreak"></div>
+<header>
+  <h1>EssayScaff — Architecture &amp; Research Design</h1>
+  <p>Sessions, presentation policy, analytics, validation, and system structure.</p>
+</header>
+
+<h2>1. Cross-stage session linking</h2>
+<p>Each stage analysis creates a revision inside a <strong>session</strong> (e.g. <code>SES-…</code>,
+<code>SES2-…</code>). Clicking "Continue" carries the <strong>real parent session ID</strong> forward, so the chain
+Idea → Thesis → Outline → Reflection → Writing Lab stays linked (topic, keywords, and prior text travel with it).
+Protections: a stage session from a different chain is never silently reused (the client resets to the current
+chain's session — no rows deleted); linked calls against not-ready upstream sessions are refused server-side (403);
+an explicit <strong>unlinked research mode</strong> (manual session fields, direct tab access) remains available.</p>
+
+<h2>2. Progressive feedback policy (presentation only)</h2>
+<p>The backend always detects and stores <em>all</em> findings. What the student sees is filtered:</p>
+<ul>
+  <li><strong>One primary card</strong> — head of the backend's priority-ranked list
+  (<code>priority_rank</code>: CRITICAL 0 → LOW 3). Resolving it surfaces the next item on re-analysis.</li>
+  <li><strong>Prompt fading / anti-repetition</strong> — already-shown prompts are deprioritized per session.</li>
+  <li><strong>Dashboard</strong> — static current goal, "Why am I seeing this?" (student-friendly, no rule IDs),
+  ≤3 proven "What's working" items (each traced to a real PASS status/classification), one next-step hint,
+  readiness checklist (✓/○/!, no raw C-ids, max 5 rows), writing snapshot
+  (words, sentences, revision, analytics active time, topic connection labeled <em>not a grade</em>),
+  plus a Previous-feedback row into history.</li>
+  <li><strong>Starter guidance</strong> in an empty Writing Lab section (fixed instructional copy — never generated sentences).</li>
+</ul>
+
+<h2>3. Analytics (counts only, privacy by design)</h2>
+<ul>
+  <li><strong>Interaction events</strong> (append-only): stage entries, analysis requests, revisions, feedback displays,
+  Continue clicks — referencing session/analysis/revision IDs. Strict validation: essay text can never be smuggled
+  into metadata; only APP_OPENED/SESSION_ENDED may omit a stage.</li>
+  <li><strong>Time on task</strong>: client-measured active time (visible tab + recent activity; idle/hidden time excluded),
+  stored as idempotent intervals, aggregated per stage and total.</li>
+  <li><strong>Aggregates are deterministic counts</strong> over stored rows — revisions, feedback items, active time,
+  readiness transitions. Never scores, never predictions. No keystroke content is ever logged.</li>
+</ul>
+
+<h2>4. Validation workspace — Phase 7A (how accuracy <em>would</em> be proven)</h2>
+<ul>
+  <li><strong>Frozen datasets</strong> (SHA-256 hash recorded at freeze) with independent <strong>human labels</strong>
+  per sample, plus an <strong>adjudication protocol</strong> for disagreements and UNCLEAR cases.</li>
+  <li><strong>Immutable runs</strong>: a run executes frozen VR-2 detectors over a frozen dataset; predictions,
+  confusion cells, and metrics are persisted with the code/config snapshot — re-runnable and auditable.</li>
+  <li><strong>VR-2 freeze gate</strong>: every run verifies the live <code>rules/*.py</code> hash
+  (<code>8ac38bf3…</code>) and frozen-threshold config hash (<code>401f3a4b…</code>) against pinned values;
+  any detector or threshold change requires a new ruleset version, never a silent edit.</li>
+  <li>Student traffic and formal validation data are kept separate; test/verification sessions are never treated as research data.</li>
+</ul>
+
+<h2>5. System structure</h2>
+<table>
+  <tr><th>Layer</th><th>Contents</th></tr>
+  <tr><td>Routes</td><td>Flask blueprints: stage analyses, session histories, source view, analytics ingest/aggregates, validation API</td></tr>
+  <tr><td>Services</td><td>NLP, keywords, WordNet, similarity, feedback assembly, per-stage orchestration, reflection, transparency builder, analytics</td></tr>
+  <tr><td>Rules</td><td>Generic detectors (thesis/meta/style/mechanics) + stage rule sets (PREWRITE, THESIS, OUTLINE, REFLECT)</td></tr>
+  <tr><td>Storage</td><td>SQLite: analysis runs, append-only stage revisions, interaction events, time intervals, validation tables</td></tr>
+  <tr><td>Frontend</td><td>Vanilla JS per stage + shell, transparency/walkthrough views, feedback-focus controller; no frameworks</td></tr>
+  <tr><td>Tests</td><td>400 pytest cases (backend contracts, jsdom runtime suite driving the real UI +
+  real payloads, cross-stage,
+  analytics, VR-2 freeze) plus live-Chrome verification scripts</td></tr>
+</table>
+
+<footer>EssayScaff · architecture &amp; research design · page 3</footer>
+</body>
+</html>
